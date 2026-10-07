@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+artifacts/
+TestResults/
+chat-artifacts/
+.contactmirror/
+.vs/
+*.user
+oauth-client.local.json
+oauth-client.json
+*.db
+*.db-shm
+*.db-wal

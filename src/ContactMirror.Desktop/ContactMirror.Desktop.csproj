@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType><AssemblyName>ContactMirror</AssemblyName><AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault></PropertyGroup>
+  <PropertyGroup><Version Condition="'$(Version)' == ''">0.2.0</Version></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ContactMirror.Application/ContactMirror.Application.csproj" />
+    <ProjectReference Include="../ContactMirror.Infrastructure/ContactMirror.Infrastructure.csproj" />
+    <PackageReference Include="Avalonia" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.3" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+</Project>

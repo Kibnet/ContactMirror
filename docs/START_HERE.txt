@@ -1,0 +1,23 @@
+ContactMirror — Windows x64, Google Contacts и файлы JSON
+
+Распакуйте ZIP целиком в отдельную папку.
+
+Знакомство без Google:
+1. Запустите current/ContactMirror.exe --demo (в raw publish: ContactMirror.exe --demo).
+2. Подключите демонстрационный аккаунт и выберите новую пустую папку.
+3. Нажмите «Проверить изменения», просмотрите план и нажмите «Применить».
+4. Откройте один из contacts/*.contact.json и измените телефон в data.phoneNumbers.
+5. Проверьте и примените изменения снова. Следующая проверка должна быть пустой.
+
+Обычный запуск portable: ContactMirror.exe в корне распакованного ZIP.
+В Google-сборке вход настроен издателем; нажмите «Подключить Google».
+Google OAuth пока Testing: войти могут добавленные тестовые пользователи.
+Настройка собственного Desktop OAuth client — расширенный сценарий в docs/GOOGLE_SETUP.md.
+
+README.md — возможности и запуск.
+docs/FORMAT.md — поля файлов и правила редактирования.
+docs/VALIDATION.md — результаты проверок и ещё не проверенные сценарии.
+schemas/ — JSON Schema для редакторов.
+examples/ — примеры вымышленных данных; не заменяют автоматически созданную папку.
+
+Настоящий Google проверен отдельно; публичный релиз и OAuth Production verification имеют отдельные границы готовности в docs/VALIDATION.md.

@@ -1,0 +1,1444 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contactmirror:schema:contact:v1",
+  "title": "ContactMirror v1 — контакт",
+  "$comment": "Derived from pinned Google People discovery revision 20261004. Runtime validation additionally checks workspace references, account binding, unknown remote replacement fields and immutable snapshots.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "type": "integer"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Локальные расширения. Не отправляются в Google."
+    },
+    "google": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true,
+      "readOnly": true,
+      "description": "Полный исходный снимок Google, включая неизвестные и вычисленные поля. Изменять его нельзя; это проверяет приложение при сравнении с baseline."
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "addresses": {
+          "type": "array",
+          "description": "The person's street addresses.",
+          "items": {
+            "$ref": "#/$defs/Address"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "biographies": {
+          "type": "array",
+          "description": "The person's biographies. This field is a singleton for contact sources.",
+          "items": {
+            "$ref": "#/$defs/Biography"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1,
+          "maxItems": 1
+        },
+        "birthdays": {
+          "type": "array",
+          "description": "The person's birthdays. This field is a singleton for contact sources.",
+          "items": {
+            "$ref": "#/$defs/Birthday"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1,
+          "maxItems": 1
+        },
+        "calendarUrls": {
+          "type": "array",
+          "description": "The person's calendar URLs.",
+          "items": {
+            "$ref": "#/$defs/CalendarUrl"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "clientData": {
+          "type": "array",
+          "description": "The person's client data.",
+          "items": {
+            "$ref": "#/$defs/ClientData"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "emailAddresses": {
+          "type": "array",
+          "description": "The person's email addresses. For `people.connections.list` and `otherContacts.list` the number of email addresses is limited to 100. If a Person has more email addresses the entire set can be obtained by calling GetPeople.",
+          "items": {
+            "$ref": "#/$defs/EmailAddress"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "events": {
+          "type": "array",
+          "description": "The person's events.",
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "externalIds": {
+          "type": "array",
+          "description": "The person's external IDs.",
+          "items": {
+            "$ref": "#/$defs/ExternalId"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "genders": {
+          "type": "array",
+          "description": "The person's genders. This field is a singleton for contact sources.",
+          "items": {
+            "$ref": "#/$defs/Gender"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1,
+          "maxItems": 1
+        },
+        "imClients": {
+          "type": "array",
+          "description": "The person's instant messaging clients.",
+          "items": {
+            "$ref": "#/$defs/ImClient"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "interests": {
+          "type": "array",
+          "description": "The person's interests.",
+          "items": {
+            "$ref": "#/$defs/Interest"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "locales": {
+          "type": "array",
+          "description": "The person's locale preferences.",
+          "items": {
+            "$ref": "#/$defs/Locale"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "locations": {
+          "type": "array",
+          "description": "The person's locations.",
+          "items": {
+            "$ref": "#/$defs/Location"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "miscKeywords": {
+          "type": "array",
+          "description": "The person's miscellaneous keywords.",
+          "items": {
+            "$ref": "#/$defs/MiscKeyword"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "names": {
+          "type": "array",
+          "description": "The person's names. This field is a singleton for contact sources.",
+          "items": {
+            "$ref": "#/$defs/Name"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1,
+          "maxItems": 1
+        },
+        "nicknames": {
+          "type": "array",
+          "description": "The person's nicknames.",
+          "items": {
+            "$ref": "#/$defs/Nickname"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "occupations": {
+          "type": "array",
+          "description": "The person's occupations.",
+          "items": {
+            "$ref": "#/$defs/Occupation"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "organizations": {
+          "type": "array",
+          "description": "The person's past or current organizations.",
+          "items": {
+            "$ref": "#/$defs/Organization"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "phoneNumbers": {
+          "type": "array",
+          "description": "The person's phone numbers. For `people.connections.list` and `otherContacts.list` the number of phone numbers is limited to 100. If a Person has more phone numbers the entire set can be obtained by calling GetPeople.",
+          "items": {
+            "$ref": "#/$defs/PhoneNumber"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "relations": {
+          "type": "array",
+          "description": "The person's relations.",
+          "items": {
+            "$ref": "#/$defs/Relation"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "sipAddresses": {
+          "type": "array",
+          "description": "The person's SIP addresses.",
+          "items": {
+            "$ref": "#/$defs/SipAddress"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "urls": {
+          "type": "array",
+          "description": "The person's associated URLs.",
+          "items": {
+            "$ref": "#/$defs/Url"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        "userDefined": {
+          "type": "array",
+          "description": "The person's user defined data.",
+          "items": {
+            "$ref": "#/$defs/UserDefined"
+          },
+          "contains": {
+            "type": "object",
+            "required": [
+              "metadata"
+            ],
+            "properties": {
+              "metadata": {
+                "type": "object",
+                "required": [
+                  "sourcePrimary"
+                ],
+                "properties": {
+                  "sourcePrimary": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        }
+      },
+      "description": "Редактируемые CONTACT-поля. Массив [] явно очищает категорию; null недопустим."
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        "not": {
+          "const": "00000000-0000-0000-0000-000000000000"
+        }
+      },
+      "uniqueItems": true,
+      "description": "UUID пользовательских ярлыков этой папки. Наличие ярлыка и совпадение UUID без учёта регистра проверяет приложение."
+    },
+    "starred": {
+      "type": "boolean"
+    },
+    "photo": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^photos/(?!\\.\\.(?:/|$))(?!.*\\/\\.\\.(?:/|$))[^\\\\:\\x00-\\x1f]+$",
+      "description": "Относительный путь внутри photos/ либо null для удаления фото. Наличие, JPEG/PNG, размер, ссылки и безопасный путь проверяет приложение."
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "id",
+    "data"
+  ],
+  "$defs": {
+    "Address": {
+      "type": "object",
+      "description": "A person's physical address. May be a P.O. box or street address. All fields are optional.",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "The type of the address. The type can be custom or one of these predefined values: * `home` * `work` * `other`"
+        },
+        "city": {
+          "type": "string",
+          "description": "The city of the address."
+        },
+        "formattedValue": {
+          "type": "string",
+          "description": "The unstructured value of the address. If this is not set by the user it will be automatically constructed from structured values."
+        },
+        "region": {
+          "type": "string",
+          "description": "The region of the address; for example, the state or province."
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the address."
+        },
+        "postalCode": {
+          "type": "string",
+          "description": "The postal code of the address."
+        },
+        "poBox": {
+          "type": "string",
+          "description": "The P.O. box of the address."
+        },
+        "country": {
+          "type": "string",
+          "description": "The country of the address."
+        },
+        "streetAddress": {
+          "type": "string",
+          "description": "The street address."
+        },
+        "countryCode": {
+          "type": "string",
+          "description": "The [ISO 3166-1 alpha-2](http://www.iso.org/iso/country_codes.htm) country code of the address."
+        },
+        "extendedAddress": {
+          "type": "string",
+          "description": "The extended address of the address; for example, the apartment number."
+        }
+      }
+    },
+    "FieldMetadata": {
+      "type": "object",
+      "description": "Metadata about a field.",
+      "additionalProperties": false,
+      "properties": {
+        "sourcePrimary": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Biography": {
+      "type": "object",
+      "description": "A person's short biography.",
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the biography."
+        },
+        "value": {
+          "type": "string",
+          "description": "The short biography."
+        },
+        "contentType": {
+          "type": "string",
+          "description": "The content type of the biography.",
+          "enum": [
+            "CONTENT_TYPE_UNSPECIFIED",
+            "TEXT_PLAIN",
+            "TEXT_HTML"
+          ]
+        }
+      }
+    },
+    "Birthday": {
+      "type": "object",
+      "description": "A person's birthday. At least one of the `date` and `text` fields are specified. The `date` and `text` fields typically represent the same date, but are not guaranteed to. Clients should always set the `date` field when mutating birthdays.",
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the birthday."
+        },
+        "text": {
+          "type": "string",
+          "description": "Prefer to use the `date` field if set. A free-form string representing the user's birthday. This value is not validated."
+        },
+        "date": {
+          "$ref": "#/$defs/Date",
+          "description": "The structured date of the birthday."
+        }
+      }
+    },
+    "Date": {
+      "type": "object",
+      "description": "Represents a whole or partial calendar date, such as a birthday. The time of day and time zone are either specified elsewhere or are insignificant. The date is relative to the Gregorian Calendar. This can represent one of the following: * A full date, with non-zero year, month, and day values. * A month and day, with a zero year (for example, an anniversary). * A year on its own, with a zero month and a zero day. * A year and month, with a zero day (for example, a credit card expiration date). Related types: * google.type.TimeOfDay * google.type.DateTime * google.protobuf.Timestamp",
+      "additionalProperties": false,
+      "properties": {
+        "year": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        },
+        "month": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12
+        },
+        "day": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 31
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "month"
+            ],
+            "properties": {
+              "month": {
+                "enum": [
+                  4,
+                  6,
+                  9,
+                  11
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "day": {
+                "maximum": 30
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "month"
+            ],
+            "properties": {
+              "month": {
+                "const": 2
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "day": {
+                "maximum": 29
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "month",
+              "day"
+            ],
+            "properties": {
+              "month": {
+                "const": 2
+              },
+              "day": {
+                "const": 29
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "year": {
+                "anyOf": [
+                  {
+                    "const": 0
+                  },
+                  {
+                    "multipleOf": 400
+                  },
+                  {
+                    "allOf": [
+                      {
+                        "multipleOf": 4
+                      },
+                      {
+                        "not": {
+                          "multipleOf": 100
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "CalendarUrl": {
+      "type": "object",
+      "description": "A person's calendar URL.",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The calendar URL."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the calendar URL. The type can be custom or one of these predefined values: * `home` * `freeBusy` * `work`"
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the calendar URL."
+        }
+      }
+    },
+    "ClientData": {
+      "type": "object",
+      "description": "Arbitrary client data that is populated by clients. Duplicate keys and values are allowed.",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "The client specified key of the client data."
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the client data."
+        },
+        "value": {
+          "type": "string",
+          "description": "The client specified value of the client data."
+        }
+      }
+    },
+    "EmailAddress": {
+      "type": "object",
+      "description": "A person's email address.",
+      "additionalProperties": false,
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "description": "The display name of the email."
+        },
+        "value": {
+          "type": "string",
+          "description": "The email address."
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the email address."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the email address. The type can be custom or one of these predefined values: * `home` * `work` * `other`"
+        }
+      }
+    },
+    "Event": {
+      "type": "object",
+      "description": "An event related to the person.",
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "$ref": "#/$defs/Date",
+          "description": "The date of the event."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the event. The type can be custom or one of these predefined values: * `anniversary` * `other`"
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the event."
+        }
+      }
+    },
+    "ExternalId": {
+      "type": "object",
+      "description": "An identifier from an external entity related to the person.",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "The value of the external ID."
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the external ID."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the external ID. The type can be custom or one of these predefined values: * `account` * `customer` * `loginId` * `network` * `organization`"
+        }
+      }
+    },
+    "Gender": {
+      "type": "object",
+      "description": "A person's gender.",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "The gender for the person. The gender can be custom or one of these predefined values: * `male` * `female` * `unspecified`"
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the gender."
+        },
+        "addressMeAs": {
+          "type": "string",
+          "description": "Free form text field for pronouns that should be used to address the person. Common values are: * `he`/`him` * `she`/`her` * `they`/`them`"
+        }
+      }
+    },
+    "ImClient": {
+      "type": "object",
+      "description": "A person's instant messaging client.",
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "description": "The protocol of the IM client. The protocol can be custom or one of these predefined values: * `aim` * `msn` * `yahoo` * `skype` * `qq` * `googleTalk` * `icq` * `jabber` * `netMeeting`"
+        },
+        "username": {
+          "type": "string",
+          "description": "The user name used in the IM client."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the IM client. The type can be custom or one of these predefined values: * `home` * `work` * `other`"
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the IM client."
+        }
+      }
+    },
+    "Interest": {
+      "type": "object",
+      "description": "One of the person's interests.",
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the interest."
+        },
+        "value": {
+          "type": "string",
+          "description": "The interest; for example, `stargazing`."
+        }
+      }
+    },
+    "Locale": {
+      "type": "object",
+      "description": "A person's locale preference.",
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the locale."
+        },
+        "value": {
+          "type": "string",
+          "description": "The well-formed [IETF BCP 47](https://tools.ietf.org/html/bcp47) language tag representing the locale."
+        }
+      }
+    },
+    "Location": {
+      "type": "object",
+      "description": "A person's location.",
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the location."
+        },
+        "value": {
+          "type": "string",
+          "description": "The free-form value of the location."
+        },
+        "current": {
+          "type": "boolean",
+          "description": "Whether the location is the current location."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the location. The type can be custom or one of these predefined values: * `desk` * `grewUp`"
+        },
+        "floor": {
+          "type": "string",
+          "description": "The floor name or number."
+        },
+        "deskCode": {
+          "type": "string",
+          "description": "The individual desk location."
+        },
+        "floorSection": {
+          "type": "string",
+          "description": "The floor section in `floor_name`."
+        },
+        "buildingId": {
+          "type": "string",
+          "description": "The building identifier."
+        }
+      }
+    },
+    "MiscKeyword": {
+      "type": "object",
+      "description": "A person's miscellaneous keyword.",
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the miscellaneous keyword."
+        },
+        "value": {
+          "type": "string",
+          "description": "The value of the miscellaneous keyword."
+        },
+        "type": {
+          "type": "string",
+          "description": "The miscellaneous keyword type.",
+          "enum": [
+            "TYPE_UNSPECIFIED",
+            "OUTLOOK_BILLING_INFORMATION",
+            "OUTLOOK_DIRECTORY_SERVER",
+            "OUTLOOK_KEYWORD",
+            "OUTLOOK_MILEAGE",
+            "OUTLOOK_PRIORITY",
+            "OUTLOOK_SENSITIVITY",
+            "OUTLOOK_SUBJECT",
+            "OUTLOOK_USER",
+            "HOME",
+            "WORK",
+            "OTHER"
+          ]
+        }
+      }
+    },
+    "Name": {
+      "type": "object",
+      "description": "A person's name. If the name is a mononym, the family name is empty.",
+      "additionalProperties": false,
+      "properties": {
+        "phoneticMiddleName": {
+          "type": "string",
+          "description": "The middle name(s) spelled as they sound."
+        },
+        "phoneticFullName": {
+          "type": "string",
+          "description": "The full name spelled as it sounds."
+        },
+        "phoneticHonorificPrefix": {
+          "type": "string",
+          "description": "The honorific prefixes spelled as they sound."
+        },
+        "honorificSuffix": {
+          "type": "string",
+          "description": "The honorific suffixes, such as `Jr.`"
+        },
+        "middleName": {
+          "type": "string",
+          "description": "The middle name(s)."
+        },
+        "givenName": {
+          "type": "string",
+          "description": "The given name."
+        },
+        "phoneticGivenName": {
+          "type": "string",
+          "description": "The given name spelled as it sounds."
+        },
+        "familyName": {
+          "type": "string",
+          "description": "The family name."
+        },
+        "honorificPrefix": {
+          "type": "string",
+          "description": "The honorific prefixes, such as `Mrs.` or `Dr.`"
+        },
+        "phoneticHonorificSuffix": {
+          "type": "string",
+          "description": "The honorific suffixes spelled as they sound."
+        },
+        "phoneticFamilyName": {
+          "type": "string",
+          "description": "The family name spelled as it sounds."
+        },
+        "unstructuredName": {
+          "type": "string",
+          "description": "The free form name value."
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the name."
+        }
+      }
+    },
+    "Nickname": {
+      "type": "object",
+      "description": "A person's nickname.",
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the nickname."
+        },
+        "value": {
+          "type": "string",
+          "description": "The nickname."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the nickname.",
+          "enum": [
+            "DEFAULT",
+            "MAIDEN_NAME",
+            "INITIALS",
+            "GPLUS",
+            "OTHER_NAME",
+            "ALTERNATE_NAME",
+            "SHORT_NAME"
+          ]
+        }
+      }
+    },
+    "Occupation": {
+      "type": "object",
+      "description": "A person's occupation.",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "The occupation; for example, `carpenter`."
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the occupation."
+        }
+      }
+    },
+    "Organization": {
+      "type": "object",
+      "description": "A person's past or current organization. Overlapping date ranges are permitted.",
+      "additionalProperties": false,
+      "properties": {
+        "endDate": {
+          "$ref": "#/$defs/Date",
+          "description": "The end date when the person left the organization."
+        },
+        "jobDescription": {
+          "type": "string",
+          "description": "The person's job description at the organization."
+        },
+        "symbol": {
+          "type": "string",
+          "description": "The symbol associated with the organization; for example, a stock ticker symbol, abbreviation, or acronym."
+        },
+        "current": {
+          "type": "boolean",
+          "description": "True if the organization is the person's current organization; false if the organization is a past organization."
+        },
+        "title": {
+          "type": "string",
+          "description": "The person's job title at the organization."
+        },
+        "fullTimeEquivalentMillipercent": {
+          "type": "integer",
+          "description": "The person's full-time equivalent millipercent within the organization (100000 = 100%).",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the organization."
+        },
+        "startDate": {
+          "$ref": "#/$defs/Date",
+          "description": "The start date when the person joined the organization."
+        },
+        "costCenter": {
+          "type": "string",
+          "description": "The person's cost center at the organization."
+        },
+        "phoneticName": {
+          "type": "string",
+          "description": "The phonetic name of the organization."
+        },
+        "department": {
+          "type": "string",
+          "description": "The person's department at the organization."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the organization. The type can be custom or one of these predefined values: * `work` * `school`"
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the organization."
+        },
+        "location": {
+          "type": "string",
+          "description": "The location of the organization office the person works at."
+        },
+        "domain": {
+          "type": "string",
+          "description": "The domain name associated with the organization; for example, `google.com`."
+        }
+      }
+    },
+    "PhoneNumber": {
+      "type": "object",
+      "description": "A person's phone number.",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "The type of the phone number. The type can be custom or one of these predefined values: * `home` * `work` * `mobile` * `homeFax` * `workFax` * `otherFax` * `pager` * `workMobile` * `workPager` * `main` * `googleVoice` * `other`"
+        },
+        "value": {
+          "type": "string",
+          "description": "The phone number."
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the phone number."
+        }
+      }
+    },
+    "Relation": {
+      "type": "object",
+      "description": "A person's relation to another person.",
+      "additionalProperties": false,
+      "properties": {
+        "person": {
+          "type": "string",
+          "description": "The name of the other person this relation refers to."
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the relation."
+        },
+        "type": {
+          "type": "string",
+          "description": "The person's relation to the other person. The type can be custom or one of these predefined values: * `spouse` * `child` * `mother` * `father` * `parent` * `brother` * `sister` * `friend` * `relative` * `domesticPartner` * `manager` * `assistant` * `referredBy` * `partner`"
+        }
+      }
+    },
+    "SipAddress": {
+      "type": "object",
+      "description": "A person's SIP address. Session Initial Protocol addresses are used for VoIP communications to make voice or video calls over the internet.",
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the SIP address."
+        },
+        "value": {
+          "type": "string",
+          "description": "The SIP address in the [RFC 3261 19.1](https://tools.ietf.org/html/rfc3261#section-19.1) SIP URI format."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the SIP address. The type can be custom or or one of these predefined values: * `home` * `work` * `mobile` * `other`"
+        }
+      }
+    },
+    "Url": {
+      "type": "object",
+      "description": "A person's associated URLs.",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "The URL."
+        },
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the URL."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the URL. The type can be custom or one of these predefined values: * `home` * `work` * `blog` * `profile` * `homePage` * `ftp` * `reservations` * `appInstallPage`: website for a Currents application. * `other`"
+        }
+      }
+    },
+    "UserDefined": {
+      "type": "object",
+      "description": "Arbitrary user data that is populated by the end users.",
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/FieldMetadata",
+          "description": "Metadata about the user defined data."
+        },
+        "key": {
+          "type": "string",
+          "description": "The end user specified key of the user defined data."
+        },
+        "value": {
+          "type": "string",
+          "description": "The end user specified value of the user defined data."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "7bf0de22-dc17-4951-b2a2-af8b705ce551",
+  "name": "Творческие встречи",
+  "clientData": [
+    { "key": "color", "value": "lavender" }
+  ],
+  "extensions": { "description": "Вымышленный ярлык для примера формата" },
+  "google": null
+}

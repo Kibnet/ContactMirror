@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contactmirror:schema:group:v1",
+  "title": "ContactMirror v1 — ярлык",
+  "$comment": "Derived from pinned Google People discovery revision 20261004. Runtime validation additionally checks workspace references, account binding, unknown remote replacement fields and immutable snapshots.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "type": "integer"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Локальные расширения. Не отправляются в Google."
+    },
+    "google": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true,
+      "readOnly": true,
+      "description": "Полный исходный снимок Google, включая неизвестные и вычисленные поля. Изменять его нельзя; это проверяет приложение при сравнении с baseline."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Непустое имя пользовательского ярлыка."
+    },
+    "clientData": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "The client specified value of the client data."
+          },
+          "key": {
+            "type": "string",
+            "description": "The client specified key of the client data."
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "id",
+    "name"
+  ]
+}

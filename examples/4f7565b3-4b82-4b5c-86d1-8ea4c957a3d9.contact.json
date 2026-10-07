@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "4f7565b3-4b82-4b5c-86d1-8ea4c957a3d9",
+  "data": {
+    "names": [{ "givenName": "Александра", "familyName": "Ветрова" }],
+    "emailAddresses": [{ "value": "alexandra@example.test", "type": "work", "metadata": { "sourcePrimary": true } }],
+    "phoneNumbers": [{ "value": "+1 202 555 0100", "type": "mobile" }],
+    "birthdays": [{ "date": { "year": 0, "month": 5, "day": 21 } }],
+    "organizations": [{ "name": "Студия «Тёплый свет»", "title": "Дизайнер интерфейсов", "type": "work" }],
+    "biographies": [{ "value": "Вымышленный контакт. Пишем друг другу по поводу творческих встреч.", "contentType": "TEXT_PLAIN" }],
+    "clientData": [{ "key": "example", "value": "contactmirror-v1" }],
+    "userDefined": [{ "key": "Как познакомились", "value": "На вымышленной конференции" }],
+    "sipAddresses": [{ "value": "sip:alexandra@example.test", "type": "work" }],
+    "locales": [{ "value": "ru-RU" }],
+    "urls": [{ "value": "https://portfolio.example.test", "type": "portfolio" }]
+  },
+  "labels": ["7bf0de22-dc17-4951-b2a2-af8b705ce551"],
+  "starred": true,
+  "photo": null,
+  "extensions": { "note": "Локальные сведения не отправляются в Google" },
+  "google": null
+}

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>ContactMirror.TestHost</AssemblyName>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/ContactMirror.Desktop/ContactMirror.Desktop.csproj" />
+    <PackageReference Include="AppAutomation.Session.Contracts" Version="1.9.0" />
+    <PackageReference Include="AppAutomation.TestHost.Avalonia" Version="1.9.0" />
+  </ItemGroup>
+</Project>

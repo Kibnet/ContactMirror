@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "isRoot": true,
+  "tools": {
+    "appautomation.tooling": {
+      "version": "1.9.0",
+      "commands": [
+        "appautomation"
+      ],
+      "rollForward": false
+    },
+    "vpk": {
+      "version": "1.2.0",
+      "commands": [
+        "vpk"
+      ],
+      "rollForward": false
+    }
+  }
+}

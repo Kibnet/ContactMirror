@@ -1,0 +1,17 @@
+<Application xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="ContactMirror.Desktop.App" RequestedThemeVariant="Default">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light"><SolidColorBrush x:Key="SurfaceBrush" Color="#F8FAFD"/><SolidColorBrush x:Key="StrokeBrush" Color="#DCE2EC"/><SolidColorBrush x:Key="SecondaryTextBrush" Color="#556173"/></ResourceDictionary>
+        <ResourceDictionary x:Key="Dark"><SolidColorBrush x:Key="SurfaceBrush" Color="#252A34"/><SolidColorBrush x:Key="StrokeBrush" Color="#3E4755"/><SolidColorBrush x:Key="SecondaryTextBrush" Color="#C0CAD8"/></ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Button"><Setter Property="Padding" Value="16,10"/><Setter Property="CornerRadius" Value="8"/></Style>
+    <Style Selector="Button.primary"><Setter Property="Background" Value="#315DDC"/><Setter Property="Foreground" Value="White"/></Style>
+    <Style Selector="TextBlock.caption"><Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+    <Style Selector="Border.card"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="22"/></Style>
+  </Application.Styles>
+</Application>
