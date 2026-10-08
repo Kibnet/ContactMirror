@@ -4,7 +4,7 @@ using ContactMirror.Core;
 
 namespace ContactMirror.Application;
 
-public sealed class SyncCoordinator(IGoogleContactsGateway gateway, IWorkspaceStore store, Action<Exception>? diagnostics = null) : ISyncCoordinator
+public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWorkspaceStore store, Action<Exception>? diagnostics = null) : ISyncCoordinator
 {
     private readonly Dictionary<Guid, Prepared> _plans = [];
     private readonly SemaphoreSlim _mutex = new(1, 1);
@@ -142,6 +142,7 @@ public sealed class SyncCoordinator(IGoogleContactsGateway gateway, IWorkspaceSt
         }
         foreach (var pending in view.Pending.DistinctBy(o => (o.EntityId, o.Field)))
         {
+            if (pending.Field == RepairField) continue; // Local repair must never enter the remote journal reconciliation path.
             var local = pending.Kind == EntityKind.Contact ? view.Contacts.GetValueOrDefault(pending.EntityId) : view.Groups.GetValueOrDefault(pending.EntityId);
             var currentRemote = pending.Kind == EntityKind.Contact ? p.People.GetValueOrDefault(pending.EntityId) : p.Groups.GetValueOrDefault(pending.EntityId);
             if (local is null || currentRemote is null || entries.Any(e => e.EntityId == pending.EntityId && (e.Field == pending.Field || e.Kind == ChangeKind.Blocked))) continue;
@@ -159,7 +160,7 @@ public sealed class SyncCoordinator(IGoogleContactsGateway gateway, IWorkspaceSt
             var id = issue.Id ?? Guid.NewGuid();
             entries.Add(new() { Key = $"issue:{Guid.NewGuid()}", EntityId = id, Entity = EntityKind.Contact, Name = Path.GetFileName(issue.Path), Field = "$file", Kind = ChangeKind.Blocked, Explanation = issue.Message });
         }
-        p.Preview = new() { Root = session.Root, Account = account, Entries = entries, Notices = notices, ContactCount = p.People.Count, GroupCount = p.Groups.Count, IsRecovery = view.IsRecovery || view.Pending.Count > 0 };
+        p.Preview = new() { Root = session.Root, Account = account, Entries = entries.Select(e => EnhanceEntry(p, e)).ToArray(), Notices = notices, ContactCount = p.People.Count, GroupCount = p.Groups.Count, IsRecovery = view.IsRecovery || view.Pending.Count > 0 };
         token.ThrowIfCancellationRequested();
         return p;
     }
@@ -205,7 +206,9 @@ public sealed class SyncCoordinator(IGoogleContactsGateway gateway, IWorkspaceSt
         var local = p.View.Contacts.GetValueOrDefault(id); var state = p.View.States.GetValueOrDefault(id); var remote = p.People.GetValueOrDefault(id);
         var localDoc = local is null ? null : DocumentCodec.Contact(local.Document);
         var name = localDoc is not null ? PersonCodec.DisplayName(localDoc) : remote is not null ? PersonCodec.DisplayName(new() { Id = id, Data = PersonCodec.Data(remote), Google = PersonCodec.Snapshot(remote) }) : "Контакт";
-        if (BlockedEntity(p, id)) { entries.Add(EntityEntry(id, EntityKind.Contact, name, ChangeKind.Blocked, local?.Document, remote, "Файл изменяет данные раздела google. Верните эту часть из резервной копии, сохранив правки data.")); return; }
+        if (p.View.Pending.Any(o => o.EntityId == id && o.Field == RepairField))
+        { entries.Add(EntityEntry(id, EntityKind.Contact, name, ChangeKind.Blocked, local?.Document, remote, "Незавершённое локальное исправление. Данные контакта и фото сохранены; завершите исправление перед отправкой.", RepairField)); return; }
+        if (BlockedEntity(p, id)) { entries.Add(EntityEntry(id, EntityKind.Contact, name, ChangeKind.Blocked, local?.Document, remote, "Служебная копия Google изменена. Исправление восстановит только раздел google; ваши правки полей и фото сохранятся.")); return; }
         if (BuildRecoveryCreate(p, id, EntityKind.Contact, name, local, entries)) return;
         if (local is null || remote is null) { BuildMissing(p, id, EntityKind.Contact, name, local, state, remote, entries); return; }
         var remoteDoc = ContactFromRemote(p, id, remote, localDoc!);

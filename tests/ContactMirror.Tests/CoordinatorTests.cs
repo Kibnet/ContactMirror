@@ -7,7 +7,7 @@ using Xunit;
 
 namespace ContactMirror.Tests;
 
-public sealed class CoordinatorTests
+public sealed partial class CoordinatorTests
 {
     private sealed class Harness : IAsyncDisposable
     {
@@ -169,6 +169,13 @@ public sealed class CoordinatorTests
         var creation = Assert.Single(restore.Entries, e => e.Field == "$restoreCreate");
         var run = await c.ApplyAsync(restore, [new(creation.Key, Resolution.UseGoogle)]); Assert.Equal(1, run.Unknown);
         Assert.Equal(6, (await h.Remote.ReadAllAsync()).People.Count);
+        if (!editPhotoAfterLink && !crashBeforeResolve)
+        {
+            // Server portrait B is downloaded during relink; queued restore portrait A remains the upload target.
+            var created = (await h.Remote.ReadAllAsync()).People.Last();
+            var imageA = await File.ReadAllBytesAsync(FileWorkspaceStore.SafePhotoPath(h.Root, target.doc["photo"]!.GetValue<string>()));
+            await h.Remote.UpdatePhotoAsync(PersonCodec.Resource(created), [.. imageA, 8]);
+        }
         var restarted = new SyncCoordinator(h.Remote, h.Store);
         var next = await restarted.PrepareAsync(h.Root, DemoAccountConnector.Identity);
         Assert.Contains(next.Entries, e => e.EntityId == id && e.Field == "$retry");
@@ -188,6 +195,12 @@ public sealed class CoordinatorTests
         }
         var photoRecovery = await restarted.PrepareAsync(h.Root, DemoAccountConnector.Identity);
         Assert.Contains(photoRecovery.Entries, e => e.EntityId == id && e.Field == "photo" && e.Kind == ChangeKind.Upload);
+        if (!editPhotoAfterLink && !crashBeforeResolve)
+        {
+            var previewPhoto = Assert.Single(photoRecovery.Entries, e => e.EntityId == id && e.Field == "photo").PhotoComparison!;
+            Assert.True(previewPhoto.HasPlannedPhoto); Assert.Equal(previewPhoto.LocalHash, previewPhoto.GoogleHash);
+            Assert.NotEqual(previewPhoto.PlannedHash, previewPhoto.LocalHash); Assert.Contains("из журнала", previewPhoto.Status); Assert.NotNull(previewPhoto.PlannedBytes);
+        }
         if (crashBeforeResolve)
         {
             var failing = new SyncCoordinator(h.Remote, new FailStateStore(h.Store, failState: false, failResolve: true));
@@ -478,6 +491,11 @@ public sealed class CoordinatorTests
         public int BulkContacts { get; set; }
         public bool DriftBulkRead { get; set; }
         public bool RejectReads { get; set; }
+        public bool RejectWrites { get; set; }
+        public bool FailPhoto { get; set; }
+        public bool ReencodePhoto { get; set; }
+        public List<string> WrittenFields { get; } = [];
+        public int PhotoWrites { get; private set; }
         public int CatalogReads { get; private set; }
         public int PersonReads { get; private set; }
         public Func<Task>? AfterUpdate { get; set; }
@@ -515,9 +533,9 @@ public sealed class CoordinatorTests
         }
         public async Task<JsonObject?> GetPersonAsync(string r, CancellationToken c = default) { if (RejectReads) throw new Xunit.Sdk.XunitException("Export must not reread Google."); PersonReads++; return Patch(await inner.GetPersonAsync(r, c)); }
         public async Task<JsonObject> CreateContactAsync(JsonObject p, CancellationToken c = default) { var result = await inner.CreateContactAsync(p, c); if (LoseCreateResponse) { LoseCreateResponse = false; throw new SyncException("lost-create-response", "Ответ создания потерян", true); } return result; }
-        public async Task<JsonObject> UpdateContactAsync(string r, JsonObject p, IReadOnlyCollection<string> f, CancellationToken c = default) { var result = await inner.UpdateContactAsync(r, p, f, c); if (AfterUpdate is not null) { var hook = AfterUpdate; AfterUpdate = null; await hook(); } return result; }
+        public async Task<JsonObject> UpdateContactAsync(string r, JsonObject p, IReadOnlyCollection<string> f, CancellationToken c = default) { if (RejectWrites) throw new Xunit.Sdk.XunitException("Local repair must not write Google."); WrittenFields.AddRange(f); var result = await inner.UpdateContactAsync(r, p, f, c); if (AfterUpdate is not null) { var hook = AfterUpdate; AfterUpdate = null; await hook(); } return result; }
         public Task DeleteContactAsync(string r, CancellationToken c = default) => inner.DeleteContactAsync(r, c);
-        public async Task<JsonObject> UpdatePhotoAsync(string r, byte[]? b, CancellationToken c = default) { var result = await inner.UpdatePhotoAsync(r, b, c); if (AfterPhotoUpdate is not null) { var hook = AfterPhotoUpdate; AfterPhotoUpdate = null; await hook(); } return result; }
+        public async Task<JsonObject> UpdatePhotoAsync(string r, byte[]? b, CancellationToken c = default) { if (RejectWrites) throw new Xunit.Sdk.XunitException("Local repair must not write Google."); PhotoWrites++; if (FailPhoto) throw new SyncException("testPhotoFailure", "Synthetic photo failure"); if (ReencodePhoto && b is not null) b = b.Concat(new byte[] { 0 }).ToArray(); var result = await inner.UpdatePhotoAsync(r, b, c); if (AfterPhotoUpdate is not null) { var hook = AfterPhotoUpdate; AfterPhotoUpdate = null; await hook(); } return result; }
         public Task<byte[]> DownloadPhotoAsync(string u, CancellationToken c = default) { if (RejectReads) throw new Xunit.Sdk.XunitException("Export must use already loaded photos."); return inner.DownloadPhotoAsync(u, c); }
         public Task<JsonObject?> GetGroupAsync(string r, CancellationToken c = default) { if (RejectReads) throw new Xunit.Sdk.XunitException("Export must not reread Google."); return inner.GetGroupAsync(r, c); }
         public Task<JsonObject> CreateGroupAsync(string n, JsonArray d, CancellationToken c = default) => inner.CreateGroupAsync(n, d, c);
@@ -526,13 +544,13 @@ public sealed class CoordinatorTests
         public Task ModifyMembershipAsync(string g, string p, bool a, CancellationToken c = default) => inner.ModifyMembershipAsync(g, p, a, c);
     }
 
-    private sealed class FailStateStore(IWorkspaceStore inner, bool failState = true, bool failResolve = false) : IWorkspaceStore
+    private sealed class FailStateStore(IWorkspaceStore inner, bool failState = true, bool failResolve = false, int failWrite = 0) : IWorkspaceStore
     {
-        public async Task<IWorkspaceSession> OpenAsync(string r, AccountIdentity a, CancellationToken c = default) => new FailSession(await inner.OpenAsync(r, a, c), failState, failResolve);
+        public async Task<IWorkspaceSession> OpenAsync(string r, AccountIdentity a, CancellationToken c = default) => new FailSession(await inner.OpenAsync(r, a, c), failState, failResolve, failWrite);
         public Task<IReadOnlyList<RunSummary>> GetHistoryAsync(string r, CancellationToken c = default) => inner.GetHistoryAsync(r, c);
         public Task<IReadOnlyList<BackupItem>> GetBackupAsync(string r, Guid id, CancellationToken c = default) => inner.GetBackupAsync(r, id, c);
         public Task<string> CreateContactFileAsync(string r, CancellationToken c = default) => inner.CreateContactFileAsync(r, c);
-        private sealed class FailSession(IWorkspaceSession inner, bool failState, bool failResolve) : IWorkspaceSession
+        private sealed class FailSession(IWorkspaceSession inner, bool failState, bool failResolve, int failWrite) : IWorkspaceSession
         {
             public string Root => inner.Root; public WorkspaceView View => inner.View;
             public ValueTask DisposeAsync() => inner.DisposeAsync();
@@ -541,11 +559,13 @@ public sealed class CoordinatorTests
             public Task RecordAsync(Guid id, JournalOperation o, CancellationToken c = default) => inner.RecordAsync(id, o, c);
             public Task SaveStateAsync(EntityState s, CancellationToken c = default) => failState ? throw new IOException("Injected state failure") : inner.SaveStateAsync(s, c);
             public Task RemoveStateAsync(Guid id, CancellationToken c = default) => inner.RemoveStateAsync(id, c);
-            public Task<LocalEntity> WriteAsync(EntityKind k, Guid id, JsonObject d, string? h, byte[]? b = null, string? ph = null, bool wp = false, CancellationToken c = default) => inner.WriteAsync(k, id, d, h, b, ph, wp, c);
+            public async Task<LocalEntity> WriteAsync(EntityKind k, Guid id, JsonObject d, string? h, byte[]? b = null, string? ph = null, bool wp = false, CancellationToken c = default)
+            { if (failWrite == 1) throw new IOException("Before write"); var written = await inner.WriteAsync(k, id, d, h, b, ph, wp, c); if (failWrite == 2) throw new IOException("After atomic write"); return written; }
             public Task TrashAsync(EntityKind k, Guid id, string h, Guid r, CancellationToken c = default) => inner.TrashAsync(k, id, h, r, c);
             public Task CompleteRunAsync(Guid id, SyncRunResult r, CancellationToken c = default) => inner.CompleteRunAsync(id, r, c);
             public Task AcknowledgeRecoveryAsync(CancellationToken c = default) => inner.AcknowledgeRecoveryAsync(c);
             public Task ResolvePendingAsync(Guid id, string? field = null, CancellationToken c = default) => failResolve ? throw new IOException("Injected failure after saved state before resolve") : inner.ResolvePendingAsync(id, field, c);
+            public Task CommitLocalRepairAsync(Guid runId, JournalOperation operation, SyncRunResult result, CancellationToken c = default) => failResolve ? throw new IOException("Injected repair commit failure") : inner.CommitLocalRepairAsync(runId, operation, result, c);
             public Task<string> CacheImageAsync(byte[] b, string url, CancellationToken c = default) => inner.CacheImageAsync(b, url, c);
             public Task DeleteBackupAsync(Guid id, CancellationToken c = default) => inner.DeleteBackupAsync(id, c);
         }

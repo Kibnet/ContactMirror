@@ -13,9 +13,10 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
     private readonly Action<string>? beforeReplace;
     private readonly Action<string>? afterReplace;
     private readonly Action<string>? onDocumentRead;
+    private readonly Action? afterRepairIntentResolution;
     public FileWorkspaceStore() { }
-    internal FileWorkspaceStore(Action<string>? beforeReplace, Action<string>? afterReplace = null, Action<string>? onDocumentRead = null)
-    { this.beforeReplace = beforeReplace; this.afterReplace = afterReplace; this.onDocumentRead = onDocumentRead; }
+    internal FileWorkspaceStore(Action<string>? beforeReplace, Action<string>? afterReplace = null, Action<string>? onDocumentRead = null, Action? afterRepairIntentResolution = null)
+    { this.beforeReplace = beforeReplace; this.afterReplace = afterReplace; this.onDocumentRead = onDocumentRead; this.afterRepairIntentResolution = afterRepairIntentResolution; }
     public async Task<IWorkspaceSession> OpenAsync(string root, AccountIdentity account, CancellationToken cancellationToken = default)
     {
         WorkspacePathPolicy.Current.Validate(root);
@@ -69,7 +70,7 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
                 if (integrity != "ok") throw new SyncException("corruptState", "Состояние папки повреждено. Данные не изменены; восстановите state.db из копии.");
                 if (needsRecovery) await ExecuteAsync(connection, "INSERT OR REPLACE INTO flags(name,value) VALUES('recovery','1')", cancellationToken);
                 var recovery = Convert.ToString(await ScalarAsync(connection, "SELECT value FROM flags WHERE name='recovery'", cancellationToken)) == "1";
-                var session = new Session(root, lease, connection, recovery, beforeReplace, afterReplace, onDocumentRead);
+                var session = new Session(root, lease, connection, recovery, beforeReplace, afterReplace, onDocumentRead, afterRepairIntentResolution);
                 try { await session.LoadAsync(cancellationToken); }
                 catch { await session.DisposeAsync(); throw; }
                 return session;
@@ -252,7 +253,7 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
     private static async Task ExecuteAsync(SqliteConnection db, string sql, CancellationToken token)
     { ValidateControlPaths(Path.GetDirectoryName(Path.GetDirectoryName(db.DataSource))!); using var command = db.CreateCommand(); command.CommandText = sql; await command.ExecuteNonQueryAsync(token); }
 
-    private sealed class Session(string root, FileStream lease, SqliteConnection db, bool recovery, Action<string>? beforeReplace, Action<string>? afterReplace, Action<string>? onDocumentRead) : IWorkspaceSession
+    private sealed class Session(string root, FileStream lease, SqliteConnection db, bool recovery, Action<string>? beforeReplace, Action<string>? afterReplace, Action<string>? onDocumentRead, Action? afterRepairIntentResolution) : IWorkspaceSession
     {
         public string Root { get; } = root;
         public WorkspaceView View { get; private set; } = null!;
@@ -755,6 +756,35 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
             ValidateControlPaths(Root);
             using var command = db.CreateCommand(); command.CommandText = "UPDATE operations SET json=json_set(json,'$.status','reconciled') WHERE json_extract(json,'$.entityId')=$id AND ($field IS NULL OR json_extract(json,'$.field')=$field) AND json_extract(json,'$.status') IN ('started','unknown','confirmed')";
             command.Parameters.AddWithValue("$id", entityId.ToString()); command.Parameters.AddWithValue("$field", (object?)field ?? DBNull.Value); await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        public async Task CommitLocalRepairAsync(Guid runId, JournalOperation operation, SyncRunResult result, CancellationToken cancellationToken = default)
+        {
+            ValidateControlPaths(Root);
+            if (operation.Field != "$repairGoogleSnapshot" || operation.Status != "committed" || operation.SnapshotRepair is null || !result.IsComplete || result.RunId != runId)
+                throw new ArgumentException("A completed local repair is required.");
+            using var transaction = db.BeginTransaction();
+            using var command = db.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "INSERT OR REPLACE INTO operations(run_id,key,json) VALUES($run,$key,$json); UPDATE operations SET json=json_set(json,'$.status','reconciled') WHERE json_extract(json,'$.entityId')=$id AND json_extract(json,'$.field')='$repairGoogleSnapshot' AND json_extract(json,'$.status') IN ('started','unknown','confirmed');";
+            command.Parameters.AddWithValue("$run", runId.ToString()); command.Parameters.AddWithValue("$key", operation.Key);
+            command.Parameters.AddWithValue("$json", JsonSerializer.Serialize(operation, JsonSemantics.Options)); command.Parameters.AddWithValue("$id", operation.EntityId.ToString());
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            // Fault injection here proves intent resolution cannot survive without history finalization.
+            afterRepairIntentResolution?.Invoke();
+            command.Parameters.Clear();
+            command.CommandText = "UPDATE runs SET status='complete',confirmed=$c,failed=0,unknown=0 WHERE id=$run";
+            command.Parameters.AddWithValue("$run", runId.ToString()); command.Parameters.AddWithValue("$c", result.Confirmed);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            command.Parameters.Clear();
+            command.CommandText = """
+                UPDATE runs SET status='recovered', confirmed=(SELECT count(*) FROM operations WHERE run_id=runs.id AND json_extract(json,'$.status') IN ('committed','reconciled')), failed=0, unknown=0
+                WHERE status IN ('partial','running')
+                AND EXISTS (SELECT 1 FROM operations WHERE run_id=runs.id AND json_extract(json,'$.entityId')=$id AND json_extract(json,'$.field')='$repairGoogleSnapshot')
+                AND NOT EXISTS (SELECT 1 FROM operations WHERE run_id=runs.id AND (json_extract(json,'$.entityId')<>$id OR json_extract(json,'$.field')<>'$repairGoogleSnapshot' OR json_extract(json,'$.status') NOT IN ('committed','reconciled')));
+                """;
+            command.Parameters.AddWithValue("$id", operation.EntityId.ToString());
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            transaction.Commit();
         }
         public async ValueTask DisposeAsync()
         {

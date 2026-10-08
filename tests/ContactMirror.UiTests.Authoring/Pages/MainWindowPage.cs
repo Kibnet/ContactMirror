@@ -31,6 +31,8 @@ namespace ContactMirror.UiTests.Authoring.Pages;
 [UiControl("CancelButton", UiControlType.Button, "CancelButton")]
 [UiControl("DeletePhraseInput", UiControlType.TextBox, "DeletePhraseInput")]
 [UiControl("ConfirmDeletesButton", UiControlType.Button, "ConfirmDeletesButton")]
+[UiControl("RepairGoogleSnapshotButton", UiControlType.Button, "RepairGoogleSnapshotButton")]
+[UiControl("DiffSummary", UiControlType.Label, "DiffSummary")]
 public sealed partial class MainWindowPage : UiPage
 {
     public MainWindowPage(IUiControlResolver resolver) : base(resolver)

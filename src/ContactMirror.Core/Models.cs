@@ -25,6 +25,10 @@ public sealed class SyncEntry
     public JsonNode? Local { get; init; }
     public JsonNode? Google { get; init; }
     public string? Explanation { get; init; }
+    public bool CanRepairGoogleSnapshot { get; init; }
+    public bool CompletesLocalRepair { get; init; }
+    public string? LocalPath { get; init; }
+    public PhotoComparison? PhotoComparison { get; init; }
     public bool IsDestructive => Kind is ChangeKind.DeleteLocal or ChangeKind.DeleteRemote;
     public bool DeletesRemote(Resolution resolution) => Kind == ChangeKind.DeleteRemote || Kind == ChangeKind.Conflict && Field == "$entity" && Local is null && resolution == Resolution.UseLocal;
     public bool DeletesLocal(Resolution resolution) => Kind == ChangeKind.DeleteLocal || Kind == ChangeKind.Conflict && Field == "$entity" && Google is null && resolution == Resolution.UseGoogle;
@@ -32,6 +36,11 @@ public sealed class SyncEntry
     public bool IsSelectable => Kind != ChangeKind.Blocked;
     public bool DefaultSelected => Kind is not (ChangeKind.Conflict or ChangeKind.Blocked or ChangeKind.DeleteLocal or ChangeKind.DeleteRemote);
 }
+
+// Presentation only. Mutation authorization is re-evaluated from the coordinator's registered plan.
+public sealed record PhotoComparison(string? BeforeLocalHash, string? BeforeGoogleHash, string? LocalHash,
+    string? GoogleHash, string? LocalPath, byte[]? LocalBytes, byte[]? GoogleBytes, string Status,
+    bool HasPlannedPhoto = false, string? PlannedHash = null, byte[]? PlannedBytes = null);
 
 public sealed record PlanChoice(string Key, Resolution Resolution = Resolution.Automatic);
 public sealed class SyncPreview

@@ -16,7 +16,7 @@ using Avalonia.VisualTree;
 namespace ContactMirror.UiTests.Headless.Tests;
 
 [InheritsTests]
-public sealed class MainWindowHeadlessTests
+public sealed partial class MainWindowHeadlessTests
     : MainWindowScenariosBase<MainWindowHeadlessTests.HeadlessRuntimeSession>
 {
     [Test]

@@ -8,6 +8,7 @@ using ContactMirror.Application;
 using ContactMirror.Core;
 using ContactMirror.Application.Updates;
 using Avalonia.Threading;
+using Avalonia.Media.Imaging;
 
 namespace ContactMirror.Desktop;
 
@@ -24,6 +25,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly Action _activityChanged;
     private TaskCompletionSource? _idle;
     private bool _closeRequested;
+    private CancellationTokenSource? _detailsCancellation;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
     public MainWindowViewModel(IAccountConnector account, ISyncCoordinator sync, bool demo = false, bool persist = true, ApplicationActivity? activity = null, IApplicationUpdateService? updates = null)
     {
@@ -68,6 +70,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private bool _showBackupDeleteConfirmation;
     [ObservableProperty] private string _backupDeleteWarning = "";
     [ObservableProperty] private string _historyBackupVolume = "";
+    [ObservableProperty] private string _diffSummary = "";
+    [ObservableProperty] private IReadOnlyList<DiffRow> _diffRows = [];
+    [ObservableProperty] private Bitmap? _localPhotoPreview;
+    [ObservableProperty] private Bitmap? _googlePhotoPreview;
+    [ObservableProperty] private Bitmap? _plannedPhotoPreview;
+    [ObservableProperty] private double _settingsPanelHeight = 170;
+    [ObservableProperty] private double _workspaceHeaderHeight = 300;
     public bool IsDemo { get; }
     public bool CanConfigure => !IsBusy && !_activity.IsActive && !_activity.IsApplying && !_closeRequested;
     public bool CanOverrideOAuth => CanConfigure && !ContactMirror.Infrastructure.Configuration.ApplicationPaths.IsValidation && !IsDemo;
@@ -83,6 +92,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public bool HasResults => Results.Count > 0;
     public bool HasSelectedEntry => SelectedEntry is not null;
     public bool HasSelectedConflict => SelectedEntry?.IsConflict == true;
+    public bool HasPhotoComparison => SelectedEntry?.Entry.PhotoComparison is not null;
+    public bool CanRepairGoogleSnapshot => HasPreview && CanConfigure && SelectedEntry?.Entry.CanRepairGoogleSnapshot == true;
+    public bool HasRepairAction => SelectedEntry?.Entry.CanRepairGoogleSnapshot == true;
+    public string RepairCaption => SelectedEntry?.Entry.CompletesLocalRepair == true ? "Завершить локальное исправление" : "Исправить служебную копию";
+    public string PhotoStatus => SelectedEntry?.Entry.PhotoComparison?.Status ?? "";
+    public string PhotoBaseline => SelectedEntry?.Entry.PhotoComparison is { } photo ? $"Было в файле: {photo.BeforeLocalHash ?? "без фото"}\nБыло в Google: {photo.BeforeGoogleHash ?? "без фото"}\nПредыдущее изображение не сохранено." : "";
+    public string LocalPhotoInfo => SelectedEntry?.Entry.PhotoComparison is { } photo ? $"{photo.LocalPath ?? "Без фото"}\nSHA-256: {photo.LocalHash ?? "—"}" : "";
+    public string GooglePhotoInfo => $"SHA-256: {SelectedEntry?.Entry.PhotoComparison?.GoogleHash ?? "—"}";
+    public bool HasPlannedPhoto => SelectedEntry?.Entry.PhotoComparison?.HasPlannedPhoto == true;
+    public string PlannedPhotoInfo => $"Из журнала: {SelectedEntry?.Entry.PhotoComparison?.PlannedHash ?? "без фото"}. Будет отправлено при выборе версии из папки.";
     public ObservableCollection<EntryViewModel> Entries { get; } = [];
     public ObservableCollection<EntryViewModel> VisibleEntries { get; } = [];
     public ObservableCollection<RunViewModel> History { get; } = [];
@@ -107,10 +126,49 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
     partial void OnSelectedEntryChanged(EntryViewModel? value)
     {
+        _detailsCancellation?.Cancel(); _detailsCancellation?.Dispose(); _detailsCancellation = new();
+        LocalPhotoPreview?.Dispose(); GooglePhotoPreview?.Dispose(); LocalPhotoPreview = null; GooglePhotoPreview = null;
+        PlannedPhotoPreview?.Dispose(); PlannedPhotoPreview = null;
+        DiffRows = []; DiffSummary = "";
         OnPropertyChanged(nameof(HasSelectedEntry)); OnPropertyChanged(nameof(HasSelectedConflict));
+        foreach (var property in new[] { nameof(HasPhotoComparison), nameof(HasRepairAction), nameof(RepairCaption), nameof(PhotoStatus), nameof(PhotoBaseline), nameof(LocalPhotoInfo), nameof(GooglePhotoInfo), nameof(HasPlannedPhoto), nameof(PlannedPhotoInfo) }) OnPropertyChanged(property);
+        RefreshCommands();
         AllFields = value is null ? "Выберите изменение." : $"{value.FieldLabel} · {value.Entry.Field}\n\nПАПКА: {CompactJson(value.Entry.Local)}\nGOOGLE: {CompactJson(value.Entry.Google)}\nБЫЛО: {CompactJson(value.Entry.Before)}\n\nПолные JSON-значения доступны для выделения и копирования. Кнопка «Все поля» откроет полный документ; google.person — сведения только для чтения.";
         SelectedFile = "";
-        if (value is not null) _ = LocateFileAsync(value);
+        if (value is not null) { _ = LoadDetailsAsync(value, _detailsCancellation.Token); _ = LocateFileAsync(value); }
+    }
+    private async Task LoadDetailsAsync(EntryViewModel entry, CancellationToken token)
+    {
+        Bitmap? local = null, remote = null, planned = null;
+        try
+        {
+            var rows = await Task.Run(() => PreviewDiff.Build(entry.Entry, token), token);
+            if (entry.Entry.PhotoComparison is { } photo)
+            {
+                (local, remote, planned) = await Task.Run(() => DecodePhotos(photo), token);
+            }
+            if (token.IsCancellationRequested || SelectedEntry != entry) return;
+            DiffRows = rows;
+            DiffSummary = $"Изменённых значений: {rows.Count} · " + string.Join(", ", rows.Select(r => r.Title).Distinct());
+            LocalPhotoPreview = local; GooglePhotoPreview = remote; PlannedPhotoPreview = planned; local = null; remote = null; planned = null;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is IOException or ArgumentException or InvalidOperationException or SyncException)
+        { if (SelectedEntry == entry && !token.IsCancellationRequested) Error = "Не удалось показать разницу: " + ex.Message; }
+        finally { local?.Dispose(); remote?.Dispose(); planned?.Dispose(); }
+    }
+    private static Bitmap? DecodePreview(byte[]? bytes)
+    {
+        if (bytes is null) return null;
+        ContactMirror.Infrastructure.FileWorkspaceStore.ValidateImage(bytes);
+        using var stream = new MemoryStream(bytes, writable: false);
+        return Bitmap.DecodeToWidth(stream, 180);
+    }
+    private static (Bitmap? Local, Bitmap? Google, Bitmap? Planned) DecodePhotos(PhotoComparison photo)
+    {
+        Bitmap? local = null, google = null;
+        try { local = DecodePreview(photo.LocalBytes); google = DecodePreview(photo.GoogleBytes); return (local, google, DecodePreview(photo.PlannedBytes)); }
+        catch { local?.Dispose(); google?.Dispose(); throw; }
     }
     private async Task LocateFileAsync(EntryViewModel entry)
     {
@@ -250,6 +308,22 @@ public sealed partial class MainWindowViewModel : ObservableObject
         });
     }
     [RelayCommand] private void UseLocal() { SelectedEntry?.Choose(Resolution.UseLocal); UpdateSelection(); }
+    [RelayCommand(CanExecute = nameof(CanRepairGoogleSnapshot))]
+    private async Task RepairGoogleSnapshotAsync()
+    {
+        var preview = _preview; var key = SelectedEntry?.Entry.Key;
+        if (preview is null || key is null) return;
+        await RunAsync(async token =>
+        {
+            var progress = Progress();
+            var result = await Task.Run(() => _sync.RepairGoogleSnapshotAsync(preview, key, progress, token), token);
+            Results.Clear(); foreach (var operation in result.Operations) Results.Add(operation);
+            OnPropertyChanged(nameof(HasResults));
+            InvalidatePreview(); Entries.Clear(); VisibleEntries.Clear(); SelectedEntry = null;
+            await RefreshHistoryAsync(token);
+            Status = result.IsComplete ? "Правки сохранены. Служебная копия исправлена. Нажмите «Проверить изменения», чтобы отправить правки в Google." : "Локальное исправление не завершено. Резервная копия сохранена; проверьте изменения для восстановления.";
+        });
+    }
     [RelayCommand] private void UseGoogle() { SelectedEntry?.Choose(Resolution.UseGoogle); UpdateSelection(); }
     [RelayCommand] private void Skip() { SelectedEntry?.Choose(Resolution.Skip); UpdateSelection(); }
     [RelayCommand] private void NextConflict() => SelectedEntry = Entries.FirstOrDefault(x => x.IsConflict && !x.CanApply);
@@ -302,7 +376,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         SelectionSummary = $"Выбрано: {count} · Отложено конфликтов: {Entries.Count(x => x.IsConflict && !x.CanApply)}. Перед записью будет создана резервная копия.";
         ApplyCaption = $"Применить {count}"; DeletesConfirmed = false; RefreshCommands();
     }
-    private void InvalidatePreview() { HasPreview = false; _preview = null; ShowDeleteConfirmation = false; }
+    private void InvalidatePreview() { HasPreview = false; _preview = null; ShowDeleteConfirmation = false; RefreshCommands(); }
     private void SetAccount() { IsConnected = _account is not null; AccountLabel = _account?.Email ?? "Google ещё не подключён"; }
     private async Task RefreshHistoryAsync(CancellationToken token)
     {
@@ -366,6 +440,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
     public void Detach()
     {
+        _detailsCancellation?.Cancel(); _detailsCancellation?.Dispose();
+        LocalPhotoPreview?.Dispose(); GooglePhotoPreview?.Dispose();
+        PlannedPhotoPreview?.Dispose();
         _activity.Changed -= _activityChanged;
         Updates.Detach();
     }
@@ -377,9 +454,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanCleanupBackup)); CleanupBackupCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanRestoreBackup)); RestoreCommand.NotifyCanExecuteChanged();
         CheckCommand.NotifyCanExecuteChanged(); ApplyCommand.NotifyCanExecuteChanged(); NewContactCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanRepairGoogleSnapshot)); RepairGoogleSnapshotCommand.NotifyCanExecuteChanged();
     }
     private string FindFile(SyncEntry entry)
     {
+        if (entry.LocalPath is { } capturedPath) return capturedPath;
         var directory = Path.Combine(Folder, entry.Entity == EntityKind.Contact ? "contacts" : "groups");
         if (!Directory.Exists(directory)) return "";
         foreach (var file in Directory.EnumerateFiles(directory, "*.json", SearchOption.AllDirectories))

@@ -18,6 +18,12 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _viewModel = viewModel;
+        SizeChanged += (_, _) =>
+        {
+            if (DataContext is not MainWindowViewModel current) return;
+            current.SettingsPanelHeight = Math.Clamp(Bounds.Height - 650, 100, 240);
+            current.WorkspaceHeaderHeight = Math.Clamp(Bounds.Height - 520, 120, 400);
+        };
         Opened += async (_, _) => await viewModel.InitializeAsync();
         Closing += async (_, args) =>
         {

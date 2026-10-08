@@ -35,6 +35,7 @@ public interface IGoogleContactsGateway
 
 public interface ISyncCoordinator
 {
+    Task<SyncRunResult> RepairGoogleSnapshotAsync(SyncPreview preview, string entryKey, IProgress<SyncProgress>? progress = null, CancellationToken cancellationToken = default) => throw new NotSupportedException("Исправление служебной копии недоступно в этом провайдере.");
     Task<SyncPreview> PrepareAsync(string root, AccountIdentity account, IProgress<SyncProgress>? progress = null, CancellationToken cancellationToken = default);
     Task<SyncRunResult> ApplyAsync(SyncPreview preview, IReadOnlyList<PlanChoice> choices, IProgress<SyncProgress>? progress = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RunSummary>> GetHistoryAsync(string root, CancellationToken cancellationToken = default);

@@ -12,5 +12,6 @@
     <PackageReference Include="AppAutomation.TUnit" Version="1.9.0" />
     <PackageReference Include="TUnit.Assertions" Version="1.61.29" />
     <PackageReference Include="TUnit.Core" Version="1.61.29" />
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
   </ItemGroup>
 </Project>

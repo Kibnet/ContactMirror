@@ -15,7 +15,8 @@ public sealed class EntityState
 }
 public sealed record LocalEntity(Guid Id, EntityKind Kind, string Path, JsonObject Document, string Hash, byte[]? PhotoBytes, string? PhotoHash, byte[]? RawBytes = null);
 public sealed record WorkspaceIssue(string Path, string Message, Guid? Id = null);
-public sealed record JournalOperation(string Key, Guid EntityId, EntityKind Kind, string Field, string Status, JsonObject? Payload = null, string? ResourceName = null, string? Message = null, bool CreateIntent = false, byte[]? IntentPhoto = null, string? IntentInputPhotoHash = null, bool HasIntentInput = false);
+public sealed record JournalOperation(string Key, Guid EntityId, EntityKind Kind, string Field, string Status, JsonObject? Payload = null, string? ResourceName = null, string? Message = null, bool CreateIntent = false, byte[]? IntentPhoto = null, string? IntentInputPhotoHash = null, bool HasIntentInput = false, SnapshotRepairIntent? SnapshotRepair = null);
+public sealed record SnapshotRepairIntent(string InputHash, string? PhotoHash, string OutputHash, string StateHash, string LocalPath, JsonObject Google);
 public sealed record BackupItem(EntityKind Kind, Guid Id, JsonObject? LocalDocument, byte[]? LocalPhoto, JsonObject? Remote, byte[]? RemotePhoto, EntityState? State, byte[]? RawBytes = null, string? LocalPath = null);
 
 public sealed class WorkspaceView
@@ -49,6 +50,7 @@ public interface IWorkspaceSession : IAsyncDisposable
     Task CompleteRunAsync(Guid runId, SyncRunResult result, CancellationToken cancellationToken = default);
     Task AcknowledgeRecoveryAsync(CancellationToken cancellationToken = default);
     Task ResolvePendingAsync(Guid entityId, string? field = null, CancellationToken cancellationToken = default);
+    Task CommitLocalRepairAsync(Guid runId, JournalOperation operation, SyncRunResult result, CancellationToken cancellationToken = default) => throw new NotSupportedException("Atomic local repair commit is required.");
     Task<string> CacheImageAsync(byte[] bytes, string sourceUrl, CancellationToken cancellationToken = default);
     Task DeleteBackupAsync(Guid runId, CancellationToken cancellationToken = default);
 }

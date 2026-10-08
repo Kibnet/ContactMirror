@@ -1,6 +1,32 @@
 # Проверки локальной сборки
 
-## Текущий EXEC: Google и Velopack, 2026-10-07
+## Текущий EXEC: сравнение и отправка всего контакта, 2026-10-08
+
+Реализация по `specs/2026-10-07-contact-edit-diff.md` подтверждена пользователем. Проверки используют вымышленные контакты; реальные Google-контакты и установленная версия приложения в этой задаче не изменялись.
+
+- Core **107/107 Release**: точные различия, все 23 WritableFields, ярлыки/избранное, фото, сохранение исходных байтов и правок при исправлении `google`, drift guards, restart/repeated failures/metadata-only recovery. `TestResults/ContactEdit/release-core/core.trx`.
+- Google **147/147 Release**: production HTTP gateway и coordinator с реальным файловым хранилищем, синтетическим HTTP сервером. Exact masks/source/etag, PROFILE/system memberships, photo add/replace/delete, перекодирование и partial failure. Сбой внутри SQLite repair transaction откатывает разрешение intents; перезапуск завершает локальное восстановление без HTTP/token calls. `TestResults/ContactEdit/release-google/google.trx`.
+- Headless **15/15 Release**: исходные UI-сценарии, mixed-contact + same-path photo → repair → ручная проверка → upload → no-op, 2000 строк различий для JSON больше 1 МБ с виртуализацией и отменой старого выбора. Настройки открыты в 1000×680; детали сохраняют высоту больше 100 DIP. `TestResults/ContactEdit/release-headless/`.
+- Native **7/7 Release**: полный набор, исходный mixed-contact/photo flow и compact settings-open. `TestResults/ContactEdit/release-native/`. DPI216; окно compact2250×1575 физических пикселей. UIA координаты логические: height138, assertion100. Поздние изменения recorder/capture дополнительно проверены этим Release run.
+
+Сборка `dotnet build ContactMirror.sln -c Release -m:1`: 0 ошибок/предупреждений. Repair меняет только служебный снимок и локальный журнал, оставляет data/labels/starred/photo/extensions и baselines; следующий upload требует отдельной ручной проверки и применения. HTTP fixtures не являются новым тестом в настоящем Google аккаунте. Установка, commit и публикация не выполнялись.
+
+Финальные PNG (просмотрены):
+
+- `chat-artifacts/ui/20261008-104627-112/contact-edit-blocked-name-values-native.png`: полная фамилия Ветрова / Петренко / Ветрова, точный path и три стороны;
+- в той же папке `contact-edit-blocked-photo-values-native.png`: текущие local/Google портреты и замена содержимого по прежнему пути;
+- `chat-artifacts/ui/20261008-104609-164/contact-edit-blocked-settings-compact-{photo,field}-values-native.png`: настройки и детали в компактном окне, содержимое доступно прокруткой;
+- headless compact/large rendered PNG сохранены тестами `release-headless`.
+
+`chat-artifacts/contact-edit/{before,after}.mp4`: каждый30s,15fps,2656×1846; client area приложения через PrintWindow без звука; смена активного окна не попадает в кадр. Before взят из isolated исходногоcfc57bf с корректным synthetic photo, after — финальный Release. В before виден blocked JSON без diff/repair; after показывает фото/поля, локальное исправление,5 selectable uploads и следующий no-op. After проверен по ffprobe и кадрам1/10/25s: readable surname, затем no-op, внешних окон нет. Before проверен по ffprobe и кадрам5/25s: тот же blocked контакт, полный JSON без diff/repair, внешних окон нет. Запись450 кадров воспроизводится при15fps; видео демонстрирует последовательность состояний и не измеряет время синхронизации. Прежний GDI after с другим foreground окном исключён из evidence. Промежуточные window recordings с desktop/DWM edges и первоначальный invalid-photo video исключены из итогового evidence.
+
+Новый UI regression на isolated baseline ожидаемо падает из-за отсутствующего `AutomationId:DiffSummary`: `TestResults/ContactEdit/red-valid-baseline/`. Исходные production файлы baseline не изменялись, auth secrets не копировались.
+
+Итог: **Release276/276 PASS**, сборка0 warnings/errors. Финальный независимый пяти-ролевой audit: **PASS** (business/domain, UX/designer, QA, architect, delivery/security); открытых BLOCKER/HIGH/MEDIUM/LOW нет. Reviewer самостоятельно прочитал Release TRX (storage в bin/Release, нет пропусков), recording runs1/1+1/1, финальный surname PNG, before/after кадры и ffprobe, SPEC и эту документацию. Результат сборки0/0 подтверждён root, reviewer сборку не повторял. Review выполнялся read-only в технически writable danger-full-access sandbox; техническая read-only изоляция не заявляется. Локальный EXEC завершён; установка, новая live Google запись и публикация остаются вне этого scope.
+
+Перед выдачей установщика выполнена упаковка текущих исправлений как Production0.2.6 через существующий `scripts/Build-Release.ps1`. Сборка Windows x64 self-contained включает Desktop OAuth client и GitHub feed Kibnet/ContactMirror; установка и публикация не выполнялись. Архивный Setup: `artifacts/releases/Production/versions/0.2.6/ContactMirror.Desktop-win-Setup.exe`,55.3MiB. SHA256 архивного Setup совпадает с build manifest; четыре production assemblies в full nupkg совпадают с собранным staging. Артефакты и OAuth JSON остаются ignored. Последующее поручение «Закоммить» разрешает локальный коммит этих source/tests/docs.
+
+## Предыдущий EXEC: Google и Velopack, 2026-10-07
 
 Локальные проверки завершены для кандидата 0.2.4. Публикация и проверка удалённого GitHub feed ожидают отдельного разрешения; полный post-EXEC PASS до этого не выставляется. Проверки ниже разделяют реальные установленные сценарии и HTTP fixtures.
 
