@@ -17,7 +17,7 @@
 Для Production нужен Desktop OAuth JSON. Выбран источник GitHub Releases `Kibnet/ContactMirror`:
 
 ```powershell
-pwsh -NoProfile -File scripts/Build-Release.ps1 -Version 0.2.4 -ValidationProfile Production -OAuthClientPath appsettings/oauth-client.local.json -UpdateSourceKind github -UpdateSource https://github.com/Kibnet/ContactMirror -Output artifacts/releases/Production
+pwsh -NoProfile -File scripts/Build-Release.ps1 -Version 0.3.0 -ValidationProfile Production -OAuthClientPath appsettings/oauth-client.local.json -UpdateSourceKind github -UpdateSource https://github.com/Kibnet/ContactMirror -Output artifacts/releases/Production-0.3.0
 ```
 
 Локальный каталог feed разрешён только для изолированных проверочных профилей:
@@ -31,7 +31,7 @@ pwsh -NoProfile -File scripts/Build-Release.ps1 -Version 0.2.4 -ValidationProfil
 
 ## Установленный сценарий
 
-Установите архивный Setup 0.2.0 из `versions/0.2.0`; актуальный Setup в корне feed устанавливает последнюю упакованную версию (Production-кандидат0.2.5; installed validation0.2.4). Откройте настройки, проверьте обновления, нажмите «Скачать», затем «Установить и перезапустить». Во время синхронизации перезапуск недоступен.
+Актуальный Setup в release устанавливает опубликованную версию. Уже установленная Production0.2.6 использует тот же GitHub источник и может получить полный пакет0.3.0 без промежуточных версий. Откройте настройки, проверьте обновления, нажмите «Скачать», затем «Установить и перезапустить». Во время синхронизации перезапуск недоступен. Настройки, vault и папка контактов находятся вне установки.
 
 Проверяются App ID, версия, канал `win`, RID `win-x64`, содержимое nuspec, размер и SHA256 полного пакета. Если delta-реконструкция не совпадает с SHA256 исходного full ZIP, приложение один раз скачивает исходный full пакет и повторяет проверку. Проверка не ослабляется для delta.
 
@@ -41,14 +41,14 @@ SDK/CLI: [Velopack Windows packaging](https://docs.velopack.io/packaging/operati
 
 ## GitHub Releases
 
-Подготовленная Production-сборка использует `https://github.com/Kibnet/ContactMirror`. На момент подготовки репозиторий ещё не создан, release не опубликован. Приложение читает публичные Releases без GitHub-токена; нужен публичный репозиторий.
+Production-сборка использует публичный GitHub Releases источник `https://github.com/Kibnet/ContactMirror`. Приложение читает Releases без GitHub-токена. Стабильные версии публикуются с тегом `vMAJOR.MINOR.PATCH`, каналом `win` и App ID `ContactMirror.Desktop`.
 
 Проверить пакет и получить план публикации без записи в GitHub:
 
 ```powershell
-pwsh -NoProfile -File scripts/Publish-Release.ps1 -Repository Kibnet/ContactMirror -Version 0.2.5 -Output artifacts/releases/Production
+pwsh -NoProfile -File scripts/Publish-Release.ps1 -Repository Kibnet/ContactMirror -Version 0.3.0 -Output artifacts/releases/Production-0.3.0 -Target <commit-sha>
 ```
 
-Скрипт сверяет профиль, OAuth-конфигурацию, GitHub URL и SHA256 всех файлов feed, Setup и portable. Он подготавливает русские release notes и `SHA256SUMS.txt`. После отдельного разрешения на публикацию добавьте `-Publish`; необходимы существующий репозиторий, его ветка `main` и вход через GitHub CLI. Опция создаёт публичный release `v0.2.5` через `gh release create`. Существующие версии не заменяются.
+Скрипт сверяет профиль, OAuth-конфигурацию, GitHub URL и SHA256 всех файлов feed, Setup и portable. Он подготавливает стандартные русские release notes и `SHA256SUMS.txt`; перед публикацией описание сверяют с `CHANGELOG.md` и фактическим diff. Для публикации требуется отдельное разрешение пользователя, вход через GitHub CLI и проверенный commit в репозитории. Опция `-Publish` создаёт публичный release через `gh release create`; при собственном описании передайте проверенный файл через `--notes-file`. Существующие версии не заменяются.
 
 В release попадают только nupkg, Setup, portable, feed и контрольные суммы. Build manifest с локальными путями, исходный OAuth JSON, vault и контакты пользователя не загружаются отдельно. Desktop OAuth client входит в программу; режим Google Testing сохраняется и после публикации.
