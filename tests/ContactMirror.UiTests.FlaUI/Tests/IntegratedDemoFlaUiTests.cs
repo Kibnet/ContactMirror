@@ -63,6 +63,11 @@ public sealed class IntegratedDemoFlaUiTests : RealPipelineScenariosBase<Integra
             NativeWindowCapture.Compact(Session.Inner.MainWindow.Properties.NativeWindowHandle.Value);
             Page.ClickButton(static p => p.SettingsButton);
             Thread.Sleep(350);
+            var panelShot = Path.Combine(RepositoryRoot(), "chat-artifacts", "ui", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff"), "ux-settings-native.png");
+            Directory.CreateDirectory(Path.GetDirectoryName(panelShot)!);
+            NativeWindowCapture.Save(Session.Inner.MainWindow.Properties.NativeWindowHandle.Value, panelShot);
+            Page.ClickButton(static p => p.ClosePanelButton);
+            Thread.Sleep(200);
             state += "-settings-compact";
         }
         var directory = Path.Combine(RepositoryRoot(), "chat-artifacts", "ui", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff"));
@@ -92,7 +97,17 @@ public sealed class IntegratedDemoFlaUiTests : RealPipelineScenariosBase<Integra
             Console.WriteLine($"Native compact scrolled fields screenshot: {fields}");
             if (!_compactValidation)
             {
-                var surname = list.FindFirstDescendant(Session.Inner.ConditionFactory.ByName("Фамилия")) ?? throw new InvalidOperationException("Surname difference not found.");
+                var surname = list.FindFirstDescendant(Session.Inner.ConditionFactory.ByName("Фамилия"));
+                if (surname is null && list.Patterns.Scroll.IsSupported)
+                {
+                    for (var percent = 0; percent <= 100 && surname is null; percent += 10)
+                    {
+                        list.Patterns.Scroll.Pattern.SetScrollPercent(-1, percent);
+                        Thread.Sleep(150);
+                        surname = list.FindFirstDescendant(Session.Inner.ConditionFactory.ByName("Фамилия"));
+                    }
+                }
+                if (surname is null) throw new InvalidOperationException("Surname difference not found in virtualized fields.");
                 AlignWithDetails(surname);
                 Thread.Sleep(650);
                 var names = Path.Combine(directory, state + "-name-values-native.png");

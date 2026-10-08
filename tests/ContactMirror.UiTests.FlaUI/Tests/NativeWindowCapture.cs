@@ -30,7 +30,12 @@ internal static class NativeWindowCapture
     public static void PositionForRecording(IntPtr window)
     {
         var previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
-        try { ShowWindow(window, 9); SetWindowPos(window, IntPtr.Zero, 100, 100, 0, 0, 0x15); }
+        try
+        {
+            ShowWindow(window, 9);
+            var scale = GetDpiForWindow(window) / 96d;
+            SetWindowPos(window, IntPtr.Zero, 0, 0, (int)(1000 * scale), (int)(700 * scale), 0x14);
+        }
         finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
     }
     public static void Save(IntPtr window, string path)

@@ -33,6 +33,10 @@ namespace ContactMirror.UiTests.Authoring.Pages;
 [UiControl("ConfirmDeletesButton", UiControlType.Button, "ConfirmDeletesButton")]
 [UiControl("RepairGoogleSnapshotButton", UiControlType.Button, "RepairGoogleSnapshotButton")]
 [UiControl("DiffSummary", UiControlType.Label, "DiffSummary")]
+[UiControl("ResultSummary", UiControlType.Label, "ResultSummary")]
+[UiControl("ClosePanelButton", UiControlType.Button, "ClosePanelButton")]
+[UiControl("FilterAttention", UiControlType.Button, "FilterAttention")]
+[UiControl("DeleteValidation", UiControlType.Label, "DeleteValidation")]
 public sealed partial class MainWindowPage : UiPage
 {
     public MainWindowPage(IUiControlResolver resolver) : base(resolver)

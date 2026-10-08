@@ -90,7 +90,7 @@ public sealed partial class MainWindowHeadlessTests
                 if (args.PropertyName == nameof(model.Status) && model.Status.StartsWith("Большая адресная книга")) progressNotifications++;
             };
         });
-        Page.EnterText(static page => page.FolderInput, Path.Combine(Path.GetTempPath(), "ContactMirror-ui-large-cancel"))
+        Page.EnterText(static page => page.FolderInput, ReadyTestFolder("ContactMirror-ui-large-cancel"))
             .ClickButton(static page => page.ConnectGoogleButton)
             .WaitUntilNameContains(static page => page.AccountLabel, "example@example.test");
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -112,7 +112,7 @@ public sealed partial class MainWindowHeadlessTests
     {
         var coordinator = new TestSyncCoordinator { LargeEntryCount = 10000 };
         HeadlessRuntime.Dispatch(() => ((MainWindowViewModel)Session.Inner.MainWindow.DataContext!).ReplaceServices(new TestAccountConnector(), coordinator));
-        Page.EnterText(static page => page.FolderInput, Path.Combine(Path.GetTempPath(), "ContactMirror-ui-10000"))
+        Page.EnterText(static page => page.FolderInput, ReadyTestFolder("ContactMirror-ui-10000"))
             .ClickButton(static page => page.ConnectGoogleButton)
             .WaitUntilNameContains(static page => page.AccountLabel, "example@example.test")
             .ClickButton(static page => page.CheckChangesButton)
@@ -144,7 +144,7 @@ public sealed partial class MainWindowHeadlessTests
             var viewModel = (MainWindowViewModel)Session.Inner.MainWindow.DataContext!;
             viewModel.ReplaceServices(new TestAccountConnector(), new TestSyncCoordinator { Empty = true });
         });
-        Page.EnterText(static page => page.FolderInput, Path.Combine(Path.GetTempPath(), "ContactMirror-ui-empty"))
+        Page.EnterText(static page => page.FolderInput, ReadyTestFolder("ContactMirror-ui-empty"))
             .ClickButton(static page => page.ConnectGoogleButton)
             .WaitUntilNameContains(static page => page.AccountLabel, "example@example.test")
             .ClickButton(static page => page.CheckChangesButton)
@@ -164,7 +164,7 @@ public sealed partial class MainWindowHeadlessTests
     public async Task Cancel_pending_scan_restores_working_controls()
     {
         HeadlessRuntime.Dispatch(() => ((MainWindowViewModel)Session.Inner.MainWindow.DataContext!).ReplaceServices(new TestAccountConnector(), new TestSyncCoordinator { BlockPrepare = true }));
-        Page.EnterText(static page => page.FolderInput, Path.Combine(Path.GetTempPath(), "ContactMirror-ui-cancel"))
+        Page.EnterText(static page => page.FolderInput, ReadyTestFolder("ContactMirror-ui-cancel"))
             .ClickButton(static page => page.ConnectGoogleButton)
             .WaitUntilNameContains(static page => page.AccountLabel, "example@example.test")
             .ClickButton(static page => page.CheckChangesButton)

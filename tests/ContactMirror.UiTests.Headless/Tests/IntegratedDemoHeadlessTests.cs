@@ -28,6 +28,12 @@ public sealed class IntegratedDemoHeadlessTests : RealPipelineScenariosBase<Inte
     protected override MainWindowPage CreatePage(RuntimeSession session) => new(new HeadlessControlResolver(session.Inner.MainWindow));
     protected override void CaptureCheckpoint(string state)
     {
+        if (state == "contact-edit-blocked") HeadlessRuntime.Dispatch(() =>
+        {
+            var model = (ContactMirror.Desktop.MainWindowViewModel)Session.Inner.MainWindow.DataContext!;
+            if (model.RightColumnTitle != "В Google" || model.LeftColumnTitle != "В папке" || !model.DisplayRows.Any(r => r.Title == "Фамилия") || !model.DisplayRows.Any(r => r.Title == "Заметка"))
+                throw new InvalidOperationException("Blocked repair must compare existing versions and preserve readable field titles.");
+        });
         var path = Session.Inner.CaptureScreenshot(Path.Combine(RepositoryRoot(), "chat-artifacts", "ui", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff"), state + "-headless.png"));
         Console.WriteLine($"Integrated real pipeline screenshot: {path}");
     }

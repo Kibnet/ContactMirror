@@ -2,16 +2,28 @@
   <Application.Resources>
     <ResourceDictionary>
       <ResourceDictionary.ThemeDictionaries>
-        <ResourceDictionary x:Key="Light"><SolidColorBrush x:Key="SurfaceBrush" Color="#F8FAFD"/><SolidColorBrush x:Key="StrokeBrush" Color="#DCE2EC"/><SolidColorBrush x:Key="SecondaryTextBrush" Color="#556173"/></ResourceDictionary>
-        <ResourceDictionary x:Key="Dark"><SolidColorBrush x:Key="SurfaceBrush" Color="#252A34"/><SolidColorBrush x:Key="StrokeBrush" Color="#3E4755"/><SolidColorBrush x:Key="SecondaryTextBrush" Color="#C0CAD8"/></ResourceDictionary>
+        <ResourceDictionary x:Key="Light"><SolidColorBrush x:Key="WorkspaceBrush" Color="#F5F7FB"/><SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF"/><SolidColorBrush x:Key="StrokeBrush" Color="#7F8A9D"/><SolidColorBrush x:Key="SecondaryTextBrush" Color="#4F5B6D"/><SolidColorBrush x:Key="SelectionBrush" Color="#E4ECFF"/><SolidColorBrush x:Key="WarningBrush" Color="#FFF0DC"/><SolidColorBrush x:Key="DangerTextBrush" Color="#A32222"/><SolidColorBrush x:Key="SelectedSupportingBrush" Color="#3F4A5B"/><SolidColorBrush x:Key="FocusBrush" Color="#315DDC"/></ResourceDictionary>
+        <ResourceDictionary x:Key="Dark"><SolidColorBrush x:Key="WorkspaceBrush" Color="#1C2028"/><SolidColorBrush x:Key="SurfaceBrush" Color="#282E39"/><SolidColorBrush x:Key="StrokeBrush" Color="#78869C"/><SolidColorBrush x:Key="SecondaryTextBrush" Color="#C0CAD8"/><SolidColorBrush x:Key="SelectionBrush" Color="#334767"/><SolidColorBrush x:Key="WarningBrush" Color="#443522"/><SolidColorBrush x:Key="DangerTextBrush" Color="#FFB8B8"/><SolidColorBrush x:Key="SelectedSupportingBrush" Color="#E1E9F5"/><SolidColorBrush x:Key="FocusBrush" Color="#B8CCFF"/></ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
     </ResourceDictionary>
   </Application.Resources>
   <Application.Styles>
     <FluentTheme />
-    <Style Selector="Button"><Setter Property="Padding" Value="16,10"/><Setter Property="CornerRadius" Value="8"/></Style>
+    <Style Selector="Button"><Setter Property="Padding" Value="12,8"/><Setter Property="CornerRadius" Value="6"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/><Setter Property="BorderThickness" Value="1"/></Style>
     <Style Selector="Button.primary"><Setter Property="Background" Value="#315DDC"/><Setter Property="Foreground" Value="White"/></Style>
+    <Style Selector="Button.quiet"><Setter Property="Padding" Value="6,4"/><Setter Property="BorderThickness" Value="0"/></Style>
+    <Style Selector="Button.filter"><Setter Property="Padding" Value="10,6"/></Style>
+    <Style Selector="Button.active"><Setter Property="Background" Value="{DynamicResource SelectionBrush}"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+    <Style Selector="Button.danger"><Setter Property="Background" Value="#A32222"/><Setter Property="Foreground" Value="White"/></Style>
+    <Style Selector="TextBlock.dangerText"><Setter Property="Foreground" Value="{DynamicResource DangerTextBrush}"/></Style>
+    <Style Selector="Border.warning"><Setter Property="Background" Value="{DynamicResource WarningBrush}"/><Setter Property="CornerRadius" Value="6"/></Style>
+    <Style Selector="Border.badge"><Setter Property="Background" Value="{DynamicResource SelectionBrush}"/><Setter Property="Padding" Value="8,4"/><Setter Property="CornerRadius" Value="6"/></Style>
+    <Style Selector="ListBoxItem"><Setter Property="Padding" Value="8,2"/></Style>
+    <Style Selector="ListBoxItem:selected"><Setter Property="Background" Value="{DynamicResource SelectionBrush}"/></Style>
     <Style Selector="TextBlock.caption"><Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
-    <Style Selector="Border.card"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="22"/></Style>
+    <Style Selector="ListBoxItem:selected TextBlock.caption"><Setter Property="Foreground" Value="{DynamicResource SelectedSupportingBrush}"/></Style>
+    <Style Selector="Button:focus-visible"><Setter Property="BorderBrush" Value="{DynamicResource FocusBrush}"/><Setter Property="BorderThickness" Value="2"/></Style>
+    <Style Selector="Button.primary:focus-visible"><Setter Property="BorderBrush" Value="White"/></Style>
+    <Style Selector="Border.card"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="8"/><Setter Property="Padding" Value="20"/></Style>
   </Application.Styles>
 </Application>

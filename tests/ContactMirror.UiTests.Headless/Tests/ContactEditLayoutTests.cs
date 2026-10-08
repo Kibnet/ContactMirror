@@ -16,12 +16,16 @@ public sealed partial class MainWindowHeadlessTests
     [Test, NotInParallel("DesktopUi")]
     public async Task Large_diff_is_virtualized_responsive_and_selection_cancels_old_details()
     {
-        PreparePreview();
         MainWindowViewModel model = null!;
         var before = new JsonArray(Enumerable.Range(0, 1000).Select(i => (JsonNode)new JsonObject { ["value"] = "old" + i }).ToArray());
         var local = new JsonArray(Enumerable.Range(0, 1000).Select(i => (JsonNode)new JsonObject { ["value"] = i + new string('Ж', 1200) }).ToArray());
         var entry = new EntryViewModel(new SyncEntry { Key = "large-diff", EntityId = Guid.NewGuid(), Name = "Синтетический длинный контакт", Field = "phoneNumbers", Kind = ChangeKind.Upload, Before = before, Local = local, Google = before.DeepClone() });
-        HeadlessRuntime.Dispatch(() => { model = (MainWindowViewModel)Session.Inner.MainWindow.DataContext!; model.Entries.Add(entry); model.VisibleEntries.Add(entry); model.SelectedEntry = entry; });
+        HeadlessRuntime.Dispatch(() =>
+        {
+            model = (MainWindowViewModel)Session.Inner.MainWindow.DataContext!;
+            model.ReplaceServices(new ContactMirror.AppAutomation.TestHost.TestAccountConnector(), new ContactMirror.AppAutomation.TestHost.TestSyncCoordinator { OverrideEntries = [entry.Entry, UxEntry("small", Guid.NewGuid(), "phoneNumbers")] });
+        });
+        PreparePreview();
         var watch = Stopwatch.StartNew(); var count = 0;
         while (watch.Elapsed < TimeSpan.FromSeconds(5) && count == 0)
         {
@@ -40,13 +44,15 @@ public sealed partial class MainWindowHeadlessTests
         });
         await Assert.That(realized).IsGreaterThan(0); await Assert.That(realized).IsLessThan(60);
         CaptureCheckpoint("contact-edit-large-settings-compact");
+        HeadlessRuntime.Dispatch(() => model.ClosePanelCommand.Execute(null));
+        await Task.Delay(120);
         double detailsHeight = 0;
         HeadlessRuntime.Dispatch(() => detailsHeight = Session.Inner.MainWindow.GetVisualDescendants().OfType<ScrollViewer>().Single(x => AutomationProperties.GetAutomationId(x) == "ContactDetailsScroll").Bounds.Height);
         await Assert.That(detailsHeight).IsGreaterThan(100);
         HeadlessRuntime.Dispatch(() =>
         {
-            model.ShowSettings = false; model.SelectedEntry = null; model.SelectedEntry = entry;
-            model.SelectedEntry = model.Entries[0];
+            model.ShowSettings = false; model.SelectedEntry = null; model.SelectedEntry = model.Entries[0];
+            model.SelectedEntry = model.Entries[1];
         });
         watch.Restart(); count = 0;
         while (watch.Elapsed < TimeSpan.FromSeconds(5) && count == 0)

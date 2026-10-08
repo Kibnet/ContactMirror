@@ -1,106 +1,242 @@
-<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:ContactMirror.Desktop" x:Class="ContactMirror.Desktop.MainWindow"
-  Title="ContactMirror" Width="1180" Height="820" MinWidth="820" MinHeight="640" AutomationProperties.AutomationId="ContactMirrorWindow">
-  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="28,20">
-    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,18">
-      <StackPanel><TextBlock Text="ContactMirror" FontSize="26" FontWeight="SemiBold"/><TextBlock Text="Ваши контакты — в Google и в вашей папке" Classes="caption" Margin="0,4,0,0"/></StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-        <Button Content="Что поддерживается" Command="{Binding ToggleCapabilitiesCommand}" AutomationProperties.AutomationId="CapabilitiesButton"/>
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:ContactMirror.Desktop"
+  x:Class="ContactMirror.Desktop.MainWindow" Title="ContactMirror" Width="1180" Height="820" MinWidth="820" MinHeight="640"
+  FontSize="14" Background="{DynamicResource WorkspaceBrush}" AutomationProperties.AutomationId="ContactMirrorWindow">
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20,16">
+    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+      <StackPanel Spacing="4">
+        <StackPanel Orientation="Horizontal" Spacing="14">
+          <TextBlock Text="ContactMirror" FontSize="23" FontWeight="SemiBold"/>
+          <Border IsVisible="{Binding IsDemo}" Classes="badge"><TextBlock Text="ДЕМО · вымышленные данные" FontSize="12"/></Border>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="{Binding AccountLabel}" Classes="caption" TextWrapping="NoWrap" MaxWidth="220" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AccountLabel}" AutomationProperties.AutomationId="AccountLabel" AutomationProperties.Name="{Binding AccountLabel}"/>
+          <TextBlock Text="·" Classes="caption" IsVisible="{Binding IsConnected}"/>
+          <TextBlock Text="{Binding Folder}" Classes="caption" TextWrapping="NoWrap" MaxWidth="310" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Folder}"/>
+        </StackPanel>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Button Content="История" Command="{Binding ToggleHistoryCommand}" AutomationProperties.AutomationId="HistoryButton"/>
         <Button Content="Настройки" Command="{Binding ToggleSettingsCommand}" AutomationProperties.AutomationId="SettingsButton"/>
+        <Button Content="Справка" Command="{Binding ToggleCapabilitiesCommand}" AutomationProperties.AutomationId="CapabilitiesButton"/>
       </StackPanel>
     </Grid>
-    <ScrollViewer Grid.Row="1" MaxHeight="{Binding WorkspaceHeaderHeight}" Margin="0,0,0,16" VerticalScrollBarVisibility="Auto" AutomationProperties.AutomationId="WorkspaceHeaderScroll"><StackPanel Spacing="10">
-      <Border IsVisible="{Binding IsDemo}" Background="#FFF0C2" CornerRadius="8" Padding="12"><TextBlock Text="Демонстрационный режим · вымышленные контакты · Google не подключается" Foreground="#644B00" TextWrapping="Wrap" AutomationProperties.AutomationId="DemoNotice"/></Border>
-      <Border IsVisible="{Binding HasError}" Background="#FFF0F0" CornerRadius="8" Padding="12"><TextBlock Text="{Binding Error}" Foreground="#A52929" TextWrapping="Wrap" AutomationProperties.AutomationId="ErrorText" AutomationProperties.Name="{Binding Error}"/></Border>
-      <Border Classes="card" IsVisible="{Binding ShowSettings}">
-        <ScrollViewer MaxHeight="{Binding SettingsPanelHeight}"><StackPanel Spacing="10"><TextBlock Text="Настройки приложения" FontSize="20" FontWeight="SemiBold"/>
-          <TextBlock Text="{Binding ConfigurationHint}" Classes="caption"/>
-          <TextBlock Text="Обновления" FontSize="20" FontWeight="SemiBold"/>
-          <TextBlock Text="{Binding Updates.CurrentVersion, StringFormat='Установленная версия {0}'}" AutomationProperties.AutomationId="AppVersionText"/>
-          <TextBlock Text="{Binding Updates.Status}" TextWrapping="Wrap" AutomationProperties.AutomationId="UpdateStatusText"/>
-          <TextBlock Text="{Binding Updates.Error}" IsVisible="{Binding Updates.HasError}" TextWrapping="Wrap" Foreground="#A52929" AutomationProperties.AutomationId="UpdateErrorText"/>
-          <ProgressBar Value="{Binding Updates.Progress}" Maximum="100" IsVisible="{Binding Updates.IsDownloading}" AutomationProperties.AutomationId="UpdateProgress" Height="6"/>
-          <ProgressBar IsIndeterminate="True" IsVisible="{Binding Updates.IsChecking}" Height="4"/>
-          <WrapPanel>
-            <Button Content="Проверить обновления" Command="{Binding Updates.CheckCommand}" AutomationProperties.AutomationId="CheckUpdatesButton" Margin="0,0,8,8"/>
-            <Button Content="Скачать" Command="{Binding Updates.DownloadCommand}" AutomationProperties.AutomationId="DownloadUpdateButton" Margin="0,0,8,8"/>
-            <Button Content="Установить и перезапустить" Command="{Binding Updates.RestartCommand}" IsVisible="{Binding Updates.IsReady}" AutomationProperties.AutomationId="RestartUpdateButton" Margin="0,0,8,8"/>
-            <Button Content="Остановить загрузку" Command="{Binding Updates.CancelCommand}" IsVisible="{Binding Updates.IsDownloading}" AutomationProperties.AutomationId="CancelUpdateButton" Margin="0,0,8,8"/>
-          </WrapPanel>
-          <Expander Header="Параметры Google и тема" HorizontalAlignment="Stretch">
-            <StackPanel Spacing="10">
-          <WrapPanel><Button Content="Войти снова" Command="{Binding ConnectCommand}" IsEnabled="{Binding CanConfigure}" Margin="0,0,8,8"/><Button Content="Выбрать OAuth-конфигурацию…" Click="ChooseOAuth" IsEnabled="{Binding CanOverrideOAuth}" AutomationProperties.AutomationId="OAuthConfigButton" Margin="0,0,8,8"/><Button Content="Отключить аккаунт" Command="{Binding DisconnectCommand}" IsEnabled="{Binding CanDisconnect}" Margin="0,0,8,8"/><TextBlock Text="Тема" VerticalAlignment="Center" Margin="0,0,8,8"/><ComboBox SelectedIndex="0" SelectionChanged="ThemeChanged" Width="170"><ComboBoxItem Content="Как в системе"/><ComboBoxItem Content="Светлая"/><ComboBoxItem Content="Тёмная"/></ComboBox></WrapPanel>
-          <TextBlock Text="Разрешение хранится в защищённом хранилище Windows. Отключение удаляет локальный токен; доступ можно отозвать в настройках Google." Classes="caption"/>
-          <Button Content="Использовать подключение издателя" Click="UsePublisherOAuth" IsEnabled="{Binding CanOverrideOAuth}" HorizontalAlignment="Left" AutomationProperties.AutomationId="PublisherOAuthButton"/>
-          <Separator Margin="0,8"/>
-            </StackPanel>
-          </Expander>
-        </StackPanel></ScrollViewer>
-      </Border>
-      <Border Classes="card" IsVisible="{Binding ShowCapabilities}"><StackPanel Spacing="8">
-        <TextBlock Text="Какие данные синхронизируются" FontSize="20" FontWeight="SemiBold"/>
-        <TextBlock Text="Все поля, доступные People API: имена, телефоны, почта, адреса, даты, ссылки, организации, профессии, отношения, заметки, пользовательские поля и остальные категории. Значения сохраняются полностью в JSON." TextWrapping="Wrap"/>
-        <TextBlock Text="Фото, пользовательские ярлыки и избранное поддерживаются отдельными операциями. Метаданные и данные профиля сохраняются для чтения. Неизвестное поле блокирует запись затронутой категории и объясняет причину." TextWrapping="Wrap"/>
-        <TextBlock Text="Синхронизируются сохранённые контакты. «Другие контакты», корпоративный каталог и корзина Google в эту папку не входят. Точная карта возможностей приведена ниже." Classes="caption"/>
-        <ScrollViewer MaxHeight="160"><ItemsControl ItemsSource="{Binding Capabilities}"><ItemsControl.ItemTemplate><DataTemplate><Grid ColumnDefinitions="*,*" Margin="0,4"><TextBlock Text="{Binding Title}"/><TextBlock Grid.Column="1" Text="{Binding Mode}" Classes="caption"/></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
-      </StackPanel></Border>
-        <Border IsVisible="{Binding IsConnected}" Classes="card" Padding="16" Margin="0,0,0,14"><Grid ColumnDefinitions="*,Auto"><StackPanel Spacing="4"><TextBlock Text="{Binding AccountLabel}" FontSize="16" FontWeight="SemiBold" AutomationProperties.AutomationId="AccountLabel" AutomationProperties.Name="{Binding AccountLabel}"/><TextBlock Text="{Binding Folder}" Classes="caption" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding LastRun}" Classes="caption" FontSize="12"/></StackPanel><StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"><Button Content="Папка" Command="{Binding OpenFolderCommand}"/><Button Content="Выбрать…" Click="ChooseFolder" IsEnabled="{Binding CanConfigure}"/><Button Content="История" Command="{Binding ToggleHistoryCommand}" AutomationProperties.AutomationId="HistoryButton"/></StackPanel></Grid></Border>
-    </StackPanel></ScrollViewer>
+    <StackPanel Grid.Row="1" Spacing="6" Margin="0,0,0,8">
+      <Border Classes="warning" IsVisible="{Binding HasError}" Padding="12,8"><TextBlock Text="{Binding Error}" TextWrapping="Wrap" AutomationProperties.AutomationId="ErrorText" AutomationProperties.Name="{Binding Error}"/></Border>
+      <Expander Header="Сообщения проверки" IsVisible="{Binding HasNotices}"><TextBlock Text="{Binding Notice}" TextWrapping="Wrap"/></Expander>
+    </StackPanel>
     <Grid Grid.Row="2">
-      <ScrollViewer IsVisible="{Binding IsOnboarding}"><StackPanel MaxWidth="750" HorizontalAlignment="Center" Spacing="18" Margin="0,24,0,24">
-        <TextBlock Text="Адресная книга, которой вы управляете" FontSize="30" FontWeight="SemiBold" TextWrapping="Wrap"/>
-        <TextBlock Text="Сохраните контакты обычными файлами. Правьте их в любимом редакторе и отправляйте изменения обратно в Google — с предварительным просмотром." FontSize="16" Classes="caption"/>
-        <Border Classes="card"><StackPanel Spacing="12"><TextBlock Text="1  Подключите Google" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="Вход откроется в браузере. Пароль приложение не получает." Classes="caption"/><Button HorizontalAlignment="Left" Classes="primary" Content="Подключить Google" Command="{Binding ConnectCommand}" IsEnabled="{Binding CanConfigure}" AutomationProperties.AutomationId="ConnectGoogleButton"/><TextBlock Text="{Binding ConfigurationHint}" Classes="caption"/></StackPanel></Border>
-        <Border Classes="card"><StackPanel Spacing="12"><TextBlock Text="2  Выберите папку" FontSize="20" FontWeight="SemiBold"/><Grid ColumnDefinitions="*,Auto"><TextBox IsEnabled="{Binding CanConfigure}" Text="{Binding Folder}" PlaceholderText="Папка для файлов контактов" AutomationProperties.AutomationId="FolderInput"/><Button Grid.Column="1" Content="Выбрать…" Click="ChooseFolder" IsEnabled="{Binding CanConfigure}" Margin="10,0,0,0" AutomationProperties.AutomationId="ChooseFolderButton"/></Grid><TextBlock Text="Один JSON-файл на контакт, фотографии рядом. Здесь же будут резервные копии. Синхронизируются сохранённые контакты, фото и ярлыки." Classes="caption"/></StackPanel></Border>
-      </StackPanel></ScrollViewer>
-      <Grid IsVisible="{Binding IsConnected}" IsEnabled="{Binding !ShowDeleteConfirmation}" RowDefinitions="Auto,Auto,*,Auto">
-        <StackPanel Grid.Row="1" Spacing="12" Margin="0,0,0,12"><WrapPanel><Button Content="Проверить изменения" Classes="primary" Command="{Binding CheckCommand}" AutomationProperties.AutomationId="CheckChangesButton" Margin="0,0,10,0"/><Button Content="Новый файл контакта" Command="{Binding NewContactCommand}" AutomationProperties.AutomationId="NewContactButton" Margin="0,0,10,0"/><Button Content="Разобрать конфликты" Command="{Binding NextConflictCommand}" AutomationProperties.AutomationId="NextConflictButton"/></WrapPanel><TextBlock Text="{Binding Counts}" FontWeight="SemiBold" AutomationProperties.AutomationId="PlanSummaryText" AutomationProperties.Name="{Binding Counts}"/><Grid ColumnDefinitions="Auto,*"><ComboBox ItemsSource="{Binding Filters}" SelectedIndex="{Binding FilterIndex}" Width="230" AutomationProperties.AutomationId="FilterInput"/><TextBox Grid.Column="1" Text="{Binding Search}" PlaceholderText="Поиск по имени или полю" Margin="12,0,0,0" AutomationProperties.AutomationId="SearchInput"/></Grid></StackPanel>
-        <Grid Grid.Row="2" ColumnDefinitions="0.9*,14,1.1*" IsVisible="{Binding !ShowHistory}">
-          <Border Classes="card" Padding="0"><ListBox ItemsSource="{Binding VisibleEntries}" SelectedItem="{Binding SelectedEntry}" AutomationProperties.AutomationId="ChangesList"><ListBox.ItemTemplate><DataTemplate x:DataType="vm:EntryViewModel"><Grid ColumnDefinitions="Auto,*" Margin="6,8"><CheckBox IsChecked="{Binding IsSelected}" AutomationProperties.AutomationId="{Binding Entry.Key}" IsEnabled="{Binding Entry.IsSelectable}" VerticalAlignment="Top" AutomationProperties.Name="{Binding Entry.Name}"/><StackPanel Grid.Column="1" Spacing="3"><TextBlock Text="{Binding Entry.Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Direction}" TextWrapping="Wrap"/><TextBlock Text="{Binding FieldLabel}" Classes="caption" FontSize="12"/><TextBlock Text="{Binding ResolutionLabel}" FontSize="12" Foreground="#315DDC"/></StackPanel></Grid></DataTemplate></ListBox.ItemTemplate></ListBox></Border>
-          <Border Grid.Column="2" Classes="card" Padding="18"><Grid>
-            <TextBlock IsVisible="{Binding !HasSelectedEntry}" Text="Выберите изменение в списке. Если изменений нет, контакты уже согласованы." TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" Classes="caption"/>
-            <ScrollViewer IsVisible="{Binding HasSelectedEntry}" VerticalScrollBarVisibility="Auto" AutomationProperties.AutomationId="ContactDetailsScroll">
-              <StackPanel Spacing="12">
-                <TextBlock Text="{Binding SelectedEntry.Entry.Name}" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                <TextBlock Text="{Binding SelectedEntry.Entry.Explanation}" Classes="caption" TextWrapping="Wrap"/>
-                <WrapPanel IsVisible="{Binding HasSelectedConflict}"><Button Content="Взять из папки" Command="{Binding UseLocalCommand}" AutomationProperties.AutomationId="UseLocalButton" Margin="0,0,6,6"/><Button Content="Взять из Google" Command="{Binding UseGoogleCommand}" AutomationProperties.AutomationId="UseGoogleButton" Margin="0,0,6,6"/><Button Content="Отложить" Command="{Binding SkipCommand}" AutomationProperties.AutomationId="SkipConflictButton" Margin="0,0,6,6"/></WrapPanel>
-                <StackPanel IsVisible="{Binding HasRepairAction}" Spacing="8">
-                  <TextBlock Text="Исправление восстановит только служебный раздел google из сохранённой копии. Ваши правки полей и фото останутся. Запросы в Google не выполняются." TextWrapping="Wrap" AutomationProperties.AutomationId="RepairExplanation"/>
-                  <Button Content="{Binding RepairCaption}" Command="{Binding RepairGoogleSnapshotCommand}" HorizontalAlignment="Left" AutomationProperties.AutomationId="RepairGoogleSnapshotButton"/>
-                </StackPanel>
-                <WrapPanel><Button Content="Все поля" Command="{Binding ShowAllFieldsCommand}" Margin="0,0,6,6"/><Button Content="Открыть файл" Command="{Binding OpenFileCommand}" Margin="0,0,6,6"/><Button Content="Показать в папке" Command="{Binding ShowFileCommand}" Margin="0,0,6,6"/></WrapPanel>
-                <TextBlock Text="{Binding DiffSummary}" TextWrapping="Wrap" AutomationProperties.AutomationId="DiffSummary" AutomationProperties.Name="{Binding DiffSummary}" FontSize="12" Classes="caption"/>
-                <StackPanel IsVisible="{Binding HasPhotoComparison}" Spacing="8" AutomationProperties.AutomationId="PhotoComparison">
-                  <TextBlock Text="Фотография" FontSize="18" FontWeight="SemiBold"/>
-                  <TextBlock Text="{Binding PhotoStatus}" TextWrapping="Wrap"/>
-                  <Grid ColumnDefinitions="*,*">
-                    <StackPanel Spacing="6"><TextBlock Text="В файле" FontWeight="SemiBold"/><Image Source="{Binding LocalPhotoPreview}" Height="120" MaxWidth="180" Stretch="Uniform" HorizontalAlignment="Left"/><TextBlock Text="{Binding LocalPhotoInfo}" FontSize="11" TextWrapping="Wrap"/></StackPanel>
-                    <StackPanel Grid.Column="1" Spacing="6" Margin="12,0,0,0"><TextBlock Text="В Google" FontWeight="SemiBold"/><Image Source="{Binding GooglePhotoPreview}" Height="120" MaxWidth="180" Stretch="Uniform" HorizontalAlignment="Left"/><TextBlock Text="{Binding GooglePhotoInfo}" FontSize="11" TextWrapping="Wrap"/></StackPanel>
+      <Grid IsEnabled="{Binding !ShowDeleteConfirmation}" IsVisible="{Binding !HasPanel}">
+        <ScrollViewer IsVisible="{Binding IsOnboarding}">
+          <StackPanel MaxWidth="720" HorizontalAlignment="Center" Spacing="16" Margin="20,28">
+            <TextBlock Text="Контакты в Google и в твоей папке" FontSize="28" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock Text="Сначала подключи аккаунт и выбери папку. Перед каждой записью ты увидишь изменения и выберешь, что применить." Classes="caption" FontSize="16"/>
+            <Border Classes="card"><StackPanel Spacing="10">
+              <TextBlock Text="1. Подключить Google" FontSize="20" FontWeight="SemiBold"/>
+              <TextBlock Text="Вход откроется в браузере. Пароль приложение не получает." Classes="caption" IsVisible="{Binding !IsConnected}"/>
+              <Button Content="Подключить Google" Classes="primary" Command="{Binding ConnectCommand}" IsEnabled="{Binding CanConfigure}" IsVisible="{Binding !IsConnected}" HorizontalAlignment="Left" AutomationProperties.AutomationId="ConnectGoogleButton"/>
+              <TextBlock Text="✓ Аккаунт подключён. Осталось выбрать папку." IsVisible="{Binding IsConnected}"/>
+              <TextBlock Text="{Binding ConfigurationHint}" Classes="caption"/>
+            </StackPanel></Border>
+            <Border Classes="card"><StackPanel Spacing="10">
+              <TextBlock Text="2. Выбрать папку" FontSize="20" FontWeight="SemiBold"/>
+              <Grid ColumnDefinitions="*,Auto"><TextBox Text="{Binding Folder}" IsEnabled="{Binding CanConfigure}" PlaceholderText="Папка для файлов контактов" AutomationProperties.AutomationId="FolderInput"/><Button Grid.Column="1" Content="Выбрать папку…" Click="ChooseFolder" IsEnabled="{Binding CanConfigure}" Margin="8,0,0,0" AutomationProperties.AutomationId="ChooseFolderButton"/></Grid>
+              <TextBlock Text="Один JSON-файл на контакт, фотографии рядом. Здесь же будут резервные копии." Classes="caption"/>
+              <TextBlock Text="{Binding FolderValidation}" Classes="caption" TextWrapping="Wrap" AutomationProperties.AutomationId="FolderValidation"/>
+            </StackPanel></Border>
+          </StackPanel>
+        </ScrollViewer>
+        <Grid IsVisible="{Binding IsWorkspace}" RowDefinitions="Auto,*,Auto">
+          <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <TextBlock Text="{Binding LastRun}" Classes="caption" FontSize="12" MaxWidth="270" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+              <Button Content="Открыть папку" Command="{Binding OpenFolderCommand}" Classes="quiet"/>
+              <Button Content="Новый файл" Command="{Binding NewContactCommand}" Classes="quiet" AutomationProperties.AutomationId="NewContactButton"/>
+            </StackPanel>
+            <Button Grid.Column="1" Content="Проверить изменения" Command="{Binding CheckCommand}" Classes.primary="{Binding !HasPreview}" AutomationProperties.AutomationId="CheckChangesButton"/>
+          </Grid>
+          <Grid Grid.Row="1">
+            <Grid IsVisible="{Binding ShowPlan}" IsEnabled="{Binding CanConfigure}" RowDefinitions="Auto,Auto,*">
+              <WrapPanel Margin="0,0,0,8" IsVisible="{Binding ShowPlanTools}">
+                <Button Content="{Binding AllFilterCaption}" Command="{Binding SetFilterCommand}" CommandParameter="0" Classes.active="{Binding AllFilterActive}" Classes="filter" AutomationProperties.AutomationId="FilterAll" Margin="0,0,6,4"/>
+                <Button Content="{Binding GoogleFilterCaption}" Command="{Binding SetFilterCommand}" CommandParameter="1" Classes.active="{Binding GoogleFilterActive}" Classes="filter" AutomationProperties.AutomationId="FilterGoogle" Margin="0,0,6,4"/>
+                <Button Content="{Binding FolderFilterCaption}" Command="{Binding SetFilterCommand}" CommandParameter="2" Classes.active="{Binding FolderFilterActive}" Classes="filter" AutomationProperties.AutomationId="FilterFolder" Margin="0,0,6,4"/>
+                <Button Content="{Binding AttentionFilterCaption}" Command="{Binding SetFilterCommand}" CommandParameter="3" Classes.active="{Binding AttentionFilterActive}" Classes="filter" AutomationProperties.AutomationId="FilterAttention" Margin="0,0,6,4"/>
+                <Button Content="{Binding DeleteFilterCaption}" Command="{Binding SetFilterCommand}" CommandParameter="4" Classes.active="{Binding DeleteFilterActive}" Classes="filter" AutomationProperties.AutomationId="FilterDeletes" Margin="0,0,0,4"/>
+              </WrapPanel>
+              <TextBox Grid.Row="1" Text="{Binding Search}" PlaceholderText="Поиск по имени, телефону, почте или полю…" AutomationProperties.AutomationId="SearchInput" Margin="0,0,0,10" IsVisible="{Binding ShowPlanTools}"/>
+              <Grid Grid.Row="2" x:Name="ComparisonGrid" ColumnDefinitions="0.32*,10,0.68*" AutomationProperties.AutomationId="ComparisonWorkspace">
+                <Border Classes="card" Padding="0" IsVisible="{Binding ShowList}">
+                  <Grid>
+                    <ListBox ItemsSource="{Binding VisibleGroups}" SelectedItem="{Binding SelectedGroup}" AutomationProperties.AutomationId="ChangesList" Background="Transparent" BorderThickness="0">
+                      <ListBox.ItemTemplate><DataTemplate x:DataType="vm:ContactGroupViewModel">
+                        <Grid ColumnDefinitions="Auto,*" Margin="4,6">
+                          <CheckBox IsChecked="{Binding IsSelected}" IsThreeState="True" IsEnabled="{Binding CanSelect}" AutomationProperties.AutomationId="{Binding Id}" AutomationProperties.Name="{Binding Name}" VerticalAlignment="Top"/>
+                          <StackPanel Grid.Column="1" Spacing="3">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Direction}" Classes="caption" FontSize="13"/>
+                            <TextBlock Text="{Binding Caption}" Classes="caption" FontSize="12"/>
+                          </StackPanel>
+                        </Grid>
+                      </DataTemplate></ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Text="{Binding EmptyTitle}" IsVisible="{Binding HasNoMatches}" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Margin="12"/>
                   </Grid>
-                  <TextBlock Text="{Binding PhotoBaseline}" Classes="caption" FontSize="11" TextWrapping="Wrap"/>
-                  <StackPanel IsVisible="{Binding HasPlannedPhoto}" Spacing="6"><TextBlock Text="{Binding PlannedPhotoInfo}" TextWrapping="Wrap"/><Image Source="{Binding PlannedPhotoPreview}" Height="120" MaxWidth="180" Stretch="Uniform" HorizontalAlignment="Left"/></StackPanel>
-                </StackPanel>
-                <ListBox ItemsSource="{Binding DiffRows}" MaxHeight="420" Padding="0" BorderThickness="0" Background="Transparent" AutomationProperties.AutomationId="DiffRows"><ListBox.ItemTemplate><DataTemplate>
-                  <Border BorderBrush="#526078" BorderThickness="0,0,0,1" Padding="0,8,0,12"><StackPanel Spacing="5">
-                    <TextBlock Text="{Binding Section}" Classes="caption" FontSize="12"/>
-                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding DisplayPath}" FontFamily="Consolas" FontSize="11" Classes="caption" TextWrapping="Wrap"/>
-                    <Grid ColumnDefinitions="*,*,*">
-                      <StackPanel Spacing="4"><TextBlock Text="Было" Classes="caption"/><SelectableTextBlock Text="{Binding Before}" TextWrapping="Wrap"/></StackPanel>
-                      <StackPanel Grid.Column="1" Spacing="4" Margin="10,0"><TextBlock Text="В файле" Classes="caption"/><SelectableTextBlock Text="{Binding Local}" TextWrapping="Wrap"/></StackPanel>
-                      <StackPanel Grid.Column="2" Spacing="4"><TextBlock Text="В Google" Classes="caption"/><SelectableTextBlock Text="{Binding Google}" TextWrapping="Wrap"/></StackPanel>
+                </Border>
+                <GridSplitter Grid.Column="1" ResizeDirection="Columns" HorizontalAlignment="Stretch" IsVisible="{Binding !IsNarrow}" Background="Transparent"/>
+                <Border Grid.Column="2" Classes="card" Padding="16" IsVisible="{Binding ShowDetails}">
+                  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel><Button Content="← К контактам" Command="{Binding BackToListCommand}" IsVisible="{Binding IsNarrow}" Classes="quiet" HorizontalAlignment="Left"/><TextBlock Text="{Binding SelectedEntry.Entry.Name}" FontSize="21" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/></StackPanel>
+                      <Button Grid.Column="1" Content="{Binding NextConflictCaption}" Command="{Binding NextConflictCommand}" IsVisible="{Binding HasUnresolvedConflicts}" Classes="quiet" AutomationProperties.AutomationId="NextConflictButton" ToolTip.Tip="Перейти к следующему нерешённому полю"/>
                     </Grid>
-                  </StackPanel></Border>
-                </DataTemplate></ListBox.ItemTemplate></ListBox>
-                <Expander Header="Полные значения JSON"><TextBox Text="{Binding AllFields}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Cascadia Mono,Consolas" FontSize="12" MaxHeight="260" AutomationProperties.AutomationId="FieldDetails" ScrollViewer.VerticalScrollBarVisibility="Auto"/></Expander>
-              </StackPanel>
-            </ScrollViewer>
-          </Grid></Border>
+                    <ListBox Grid.Row="1" ItemsSource="{Binding FieldEntries}" SelectedItem="{Binding SelectedEntry}" IsEnabled="{Binding HasPreview}" MaxHeight="92" Margin="0,8" Background="Transparent" BorderThickness="0" AutomationProperties.AutomationId="FieldChoices">
+                      <ListBox.ItemTemplate><DataTemplate x:DataType="vm:EntryViewModel">
+                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
+                          <CheckBox IsChecked="{Binding IsSelected}" IsEnabled="{Binding Entry.IsSelectable}" AutomationProperties.AutomationId="{Binding Entry.Key}" AutomationProperties.Name="{Binding FieldLabel}"/>
+                          <TextBlock Grid.Column="1" Text="{Binding FieldLabel}" VerticalAlignment="Center"/>
+                          <TextBlock Grid.Column="2" Text="{Binding Direction}" Classes="caption" FontSize="12" VerticalAlignment="Center" Margin="8,0"/>
+                        </Grid>
+                      </DataTemplate></ListBox.ItemTemplate>
+                    </ListBox>
+                    <Grid Grid.Row="3">
+                      <StackPanel IsVisible="{Binding !HasSelectedEntry}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" MaxWidth="440">
+                        <TextBlock Text="{Binding EmptyTitle}" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding EmptyExplanation}" Classes="caption" TextAlignment="Center"/>
+                      </StackPanel>
+                      <Grid IsVisible="{Binding HasSelectedEntry}" RowDefinitions="*,Auto">
+                        <ScrollViewer AutomationProperties.AutomationId="ContactDetailsScroll" VerticalScrollBarVisibility="Auto">
+                          <StackPanel Spacing="10">
+                            <StackPanel Spacing="4"><TextBlock Text="{Binding SelectedEntry.Entry.Explanation}" Classes="caption" TextWrapping="Wrap"/><TextBlock Text="{Binding DiffSummary}" Classes="caption" FontSize="12" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="DiffSummary" AutomationProperties.Name="{Binding DiffSummary}"/></StackPanel>
+                            <StackPanel IsVisible="{Binding HasPhotoComparison}" Spacing="6" AutomationProperties.AutomationId="PhotoComparison">
+                              <TextBlock Text="Фотография" FontWeight="SemiBold"/>
+                              <TextBlock Text="{Binding PhotoStatus}" TextWrapping="Wrap"/>
+                              <Grid ColumnDefinitions="*,*">
+                                <StackPanel><TextBlock Text="В папке" Classes="caption"/><Image Source="{Binding LocalPhotoPreview}" Height="88" Stretch="Uniform" HorizontalAlignment="Left" AutomationProperties.AutomationId="LocalPhotoPreview" AutomationProperties.Name="Фото из папки"/></StackPanel>
+                                <StackPanel Grid.Column="1"><TextBlock Text="В Google" Classes="caption"/><Image Source="{Binding GooglePhotoPreview}" Height="88" Stretch="Uniform" HorizontalAlignment="Left" AutomationProperties.AutomationId="GooglePhotoPreview" AutomationProperties.Name="Фото из Google"/></StackPanel>
+                              </Grid>
+                              <TextBlock Text="{Binding PlannedPhotoInfo}" IsVisible="{Binding HasPlannedPhoto}" Classes="caption"/>
+                              <Image Source="{Binding PlannedPhotoPreview}" IsVisible="{Binding HasPlannedPhoto}" Height="88" Stretch="Uniform" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                            <ListBox ItemsSource="{Binding DisplayRows}" MaxHeight="600" BorderThickness="0" Padding="0" Background="Transparent" AutomationProperties.AutomationId="DiffRows" SelectionMode="Toggle">
+                              <ListBox.ItemTemplate><DataTemplate>
+                                <Border BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="0,0,0,1" Padding="0,6,0,10">
+                                  <StackPanel Spacing="6">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                    <Grid ColumnDefinitions="*,*">
+                                      <StackPanel Spacing="4"><TextBlock Text="{Binding $parent[Window].DataContext.LeftColumnTitle}" Classes="caption" FontSize="12"/><SelectableTextBlock Text="{Binding Left}" TextWrapping="Wrap" AutomationProperties.AutomationId="DiffLeft"/></StackPanel>
+                                      <StackPanel Grid.Column="1" Spacing="4" Margin="16,0,0,0"><TextBlock Text="{Binding $parent[Window].DataContext.RightColumnTitle}" Classes="caption" FontSize="12"/><SelectableTextBlock Text="{Binding Right}" TextWrapping="Wrap" AutomationProperties.AutomationId="DiffRight"/></StackPanel>
+                                    </Grid>
+                                    <Expander Header="Предыдущая синхронизированная версия" FontSize="12" IsVisible="{Binding $parent[Window].DataContext.HasSelectedConflict}"><SelectableTextBlock Text="{Binding Before}" TextWrapping="Wrap"/></Expander>
+                                  </StackPanel>
+                                </Border>
+                              </DataTemplate></ListBox.ItemTemplate>
+                            </ListBox>
+                            <Expander Header="Технические подробности" AutomationProperties.AutomationId="TechnicalDetails">
+                              <StackPanel Spacing="8">
+                                <TextBlock Text="{Binding DiffSummary}" Classes="caption"/>
+                                <TextBlock Text="{Binding PhotoBaseline}" Classes="caption"/><TextBlock Text="{Binding LocalPhotoInfo}" Classes="caption"/><TextBlock Text="{Binding GooglePhotoInfo}" Classes="caption"/>
+                                <ListBox ItemsSource="{Binding DiffRows}" MaxHeight="240" Background="Transparent" BorderThickness="0" AutomationProperties.AutomationId="TechnicalDiffRows">
+                                  <ListBox.ItemTemplate><DataTemplate>
+                                    <StackPanel Spacing="4" Margin="0,0,0,12">
+                                      <SelectableTextBlock Text="{Binding DisplayPath}" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"/>
+                                      <TextBlock Text="Предыдущая версия" Classes="caption"/><SelectableTextBlock Text="{Binding Before}" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="TechnicalBefore"/>
+                                      <TextBlock Text="В папке" Classes="caption"/><SelectableTextBlock Text="{Binding Local}" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="TechnicalLocal"/>
+                                      <TextBlock Text="В Google" Classes="caption"/><SelectableTextBlock Text="{Binding Google}" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="TechnicalGoogle"/>
+                                    </StackPanel>
+                                  </DataTemplate></ListBox.ItemTemplate>
+                                </ListBox>
+                                <TextBox Text="{Binding AllFields}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" MaxHeight="250" AutomationProperties.AutomationId="FieldDetails"/>
+                                <WrapPanel><Button Content="Полный документ" Command="{Binding ShowAllFieldsCommand}" Margin="0,0,6,6"/><Button Content="Открыть файл" Command="{Binding OpenFileCommand}" Margin="0,0,6,6"/><Button Content="Показать в папке" Command="{Binding ShowFileCommand}"/></WrapPanel>
+                              </StackPanel>
+                            </Expander>
+                          </StackPanel>
+                        </ScrollViewer>
+                        <StackPanel Grid.Row="1" Spacing="6" Margin="0,8,0,0">
+                          <WrapPanel IsVisible="{Binding HasSelectedConflict}">
+                            <Button Content="{Binding LocalChoiceCaption}" Command="{Binding UseLocalCommand}" AutomationProperties.AutomationId="UseLocalButton" Margin="0,0,6,4"/>
+                            <Button Content="{Binding GoogleChoiceCaption}" Command="{Binding UseGoogleCommand}" AutomationProperties.AutomationId="UseGoogleButton" Margin="0,0,6,4"/>
+                            <Button Content="Отложить" Command="{Binding SkipCommand}" AutomationProperties.AutomationId="SkipConflictButton" Classes="quiet"/>
+                          </WrapPanel>
+                          <StackPanel IsVisible="{Binding HasRepairAction}" Spacing="4">
+                            <TextBlock Text="Локально, без запросов Google. Правки и фото сохранятся." FontSize="12" Classes="caption" AutomationProperties.AutomationId="RepairExplanation"/>
+                            <Button Content="{Binding RepairCaption}" Command="{Binding RepairGoogleSnapshotCommand}" HorizontalAlignment="Left" AutomationProperties.AutomationId="RepairGoogleSnapshotButton"/>
+                          </StackPanel>
+                          <TextBlock Text="{Binding PlannedOutcome}" IsVisible="{Binding !HasRepairAction}" TextWrapping="Wrap" FontSize="13" AutomationProperties.AutomationId="PlannedOutcome" AutomationProperties.Name="{Binding PlannedOutcome}"/>
+                        </StackPanel>
+                      </Grid>
+                    </Grid>
+                  </Grid>
+                </Border>
+              </Grid>
+            </Grid>
+            <Border IsVisible="{Binding ShowResult}" Classes="card" AutomationProperties.AutomationId="ResultPanel">
+              <Grid RowDefinitions="Auto,Auto,*">
+                <TextBlock Text="{Binding ResultSummary}" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="ResultSummary" AutomationProperties.Name="{Binding ResultSummary}"/>
+                <TextBlock Grid.Row="1" Text="Для следующей записи нажми «Проверить изменения»: приложение подготовит новый план. Старый план больше не применяется." Classes="caption" Margin="0,12"/>
+                <ListBox Grid.Row="2" ItemsSource="{Binding ResultRows}" AutomationProperties.AutomationId="ResultList" Background="Transparent" BorderThickness="0">
+                  <ListBox.ItemTemplate><DataTemplate><Border Padding="4,10" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="0,0,0,1"><StackPanel Spacing="4"><TextBlock Text="{Binding Name}" FontWeight="SemiBold"/><TextBlock Text="{Binding Outcome}"/><TextBlock Text="{Binding Field}" Classes="caption"/><TextBlock Text="{Binding Message}" TextWrapping="Wrap"/></StackPanel></Border></DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+              </Grid>
+            </Border>
+          </Grid>
+          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,12,0,0" IsVisible="{Binding !ShowResult}">
+            <StackPanel Spacing="4"><TextBlock Text="{Binding SelectionSummary}" IsVisible="{Binding !ShowResult}" Classes="caption" FontSize="12" AutomationProperties.AutomationId="PlanSummaryText"/><TextBlock Text="{Binding ApplyHint}" IsVisible="{Binding !ShowResult}" Classes="caption" FontSize="12"/><Button Content="Выбрать безопасные изменения" Command="{Binding SelectSafeCommand}" IsVisible="{Binding HasPreview}" Classes="quiet" HorizontalAlignment="Left" Padding="0,4"/></StackPanel>
+            <Button Grid.Column="1" Content="{Binding ApplyCaption}" Command="{Binding ApplyCommand}" Classes.primary="{Binding HasPreview}" VerticalAlignment="Center" AutomationProperties.AutomationId="ApplyButton" AutomationProperties.Name="{Binding ApplyCaption}"/>
+          </Grid>
         </Grid>
-        <Border Grid.Row="2" Classes="card" IsVisible="{Binding ShowHistory}"><ScrollViewer><StackPanel Spacing="12"><TextBlock Text="История и восстановление" FontSize="22" FontWeight="SemiBold"/><TextBlock Text="{Binding HistoryBackupVolume}" Classes="caption"/><ListBox ItemsSource="{Binding History}" SelectedItem="{Binding SelectedRun}" MaxHeight="220" AutomationProperties.AutomationId="HistoryList"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Caption}" TextWrapping="Wrap" Margin="4,10"/></DataTemplate></ListBox.ItemTemplate></ListBox><TextBlock Text="Восстановление сначала покажет новый план. Он учитывает текущие файлы и Google; изменения применяются только после просмотра." Classes="caption"/><WrapPanel><Button Content="Подготовить восстановление" Command="{Binding RestoreCommand}" AutomationProperties.AutomationId="RestoreButton" Margin="0,0,8,8"/><Button Content="Удалить резервную копию…" Command="{Binding CleanupBackupCommand}" AutomationProperties.AutomationId="CleanupBackupButton" Margin="0,0,0,8"/></WrapPanel><Border Classes="card" IsVisible="{Binding ShowBackupDeleteConfirmation}" Padding="16"><StackPanel Spacing="10"><TextBlock Text="{Binding BackupDeleteWarning}" TextWrapping="Wrap"/><WrapPanel><Button Content="Удалить копию без возможности восстановления" Command="{Binding ConfirmBackupDeleteCommand}" AutomationProperties.AutomationId="ConfirmCleanupBackupButton" Margin="0,0,8,8"/><Button Content="Сохранить копию" Command="{Binding DismissBackupDeleteCommand}" Margin="0,0,0,8"/></WrapPanel></StackPanel></Border></StackPanel></ScrollViewer></Border>
-        <StackPanel Grid.Row="3" Spacing="8" Margin="0,14,0,0"><TextBlock IsVisible="{Binding HasNotices}" Text="{Binding Notice}" TextWrapping="Wrap"/><Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding SelectionSummary}" Classes="caption"/><Button Content="Выбрать безопасные изменения" Command="{Binding SelectSafeCommand}" HorizontalAlignment="Left" Padding="0,6" Background="Transparent" BorderThickness="0"/></StackPanel><Button Grid.Column="1" Content="{Binding ApplyCaption}" Classes="primary" Command="{Binding ApplyCommand}" AutomationProperties.AutomationId="ApplyButton" AutomationProperties.Name="{Binding ApplyCaption}" VerticalAlignment="Center"/></Grid></StackPanel>
       </Grid>
-      <Border Classes="card" IsVisible="{Binding ShowDeleteConfirmation}" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620" Background="{DynamicResource SystemControlBackgroundAltHighBrush}"><StackPanel Spacing="16"><TextBlock Text="Подтверждение удаления" FontSize="24" FontWeight="SemiBold"/><TextBlock Text="{Binding DeleteWarning}" TextWrapping="Wrap"/><TextBox Text="{Binding DeletePhrase}" PlaceholderText="УДАЛИТЬ — для значительного числа удалений" AutomationProperties.AutomationId="DeletePhraseInput"/><StackPanel Orientation="Horizontal" Spacing="10"><Button Content="Подтвердить удаления" Command="{Binding ConfirmDeletesCommand}" AutomationProperties.AutomationId="ConfirmDeletesButton"/><Button Content="Вернуться к плану" Command="{Binding DismissDeletesCommand}"/></StackPanel></StackPanel></Border>
+      <Border IsVisible="{Binding HasPanel}" Classes="card">
+        <Grid RowDefinitions="Auto,*">
+          <Button Content="← Вернуться к изменениям" Command="{Binding ClosePanelCommand}" HorizontalAlignment="Left" Classes="quiet" AutomationProperties.AutomationId="ClosePanelButton" Margin="0,0,0,14"/>
+          <ScrollViewer Grid.Row="1" IsVisible="{Binding ShowSettings}"><StackPanel Spacing="16" MaxWidth="840" HorizontalAlignment="Stretch">
+            <TextBlock Text="Настройки" FontSize="26" FontWeight="SemiBold"/>
+            <TextBlock Text="Папка контактов" FontSize="18" FontWeight="SemiBold"/>
+            <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Folder}" TextWrapping="Wrap" VerticalAlignment="Center"/><Button Grid.Column="1" Content="Выбрать другую папку…" Click="ChooseFolder" IsEnabled="{Binding CanConfigure}"/></Grid>
+            <TextBlock Text="Аккаунт Google" FontSize="18" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding ConfigurationHint}" Classes="caption"/>
+            <WrapPanel><Button Content="Войти снова" Command="{Binding ConnectCommand}" IsEnabled="{Binding CanConfigure}" Margin="0,0,8,8"/><Button Content="Отключить аккаунт" Command="{Binding DisconnectCommand}" Margin="0,0,8,8"/></WrapPanel>
+            <TextBlock Text="Разрешение хранится в защищённом хранилище Windows. Отключение удаляет локальный токен; файлы сохраняются." Classes="caption"/>
+            <Expander Header="Подключение для разработчиков"><StackPanel Spacing="10"><Button Content="Выбрать OAuth-конфигурацию…" Click="ChooseOAuth" IsEnabled="{Binding CanOverrideOAuth}" HorizontalAlignment="Left" AutomationProperties.AutomationId="OAuthConfigButton"/><Button Content="Использовать подключение издателя" Click="UsePublisherOAuth" IsEnabled="{Binding CanOverrideOAuth}" HorizontalAlignment="Left" AutomationProperties.AutomationId="PublisherOAuthButton"/></StackPanel></Expander>
+            <Grid ColumnDefinitions="Auto,*"><TextBlock Text="Тема" Margin="0,0,14,0" VerticalAlignment="Center"/><ComboBox Grid.Column="1" SelectedIndex="0" SelectionChanged="ThemeChanged" Width="190" HorizontalAlignment="Left"><ComboBoxItem Content="Как в системе"/><ComboBoxItem Content="Светлая"/><ComboBoxItem Content="Тёмная"/></ComboBox></Grid>
+            <Separator/>
+            <TextBlock Text="Обновления" FontSize="18" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding Updates.CurrentVersion}" AutomationProperties.AutomationId="AppVersionText" AutomationProperties.Name="{Binding Updates.CurrentVersion}"/>
+            <TextBlock Text="{Binding Updates.Status}" TextWrapping="Wrap" AutomationProperties.AutomationId="UpdateStatusText"/>
+            <TextBlock Text="{Binding Updates.Error}" IsVisible="{Binding Updates.HasError}" TextWrapping="Wrap" Classes="dangerText" AutomationProperties.AutomationId="UpdateErrorText"/>
+            <ProgressBar Value="{Binding Updates.Progress}" Maximum="100" IsVisible="{Binding Updates.IsDownloading}" AutomationProperties.AutomationId="UpdateProgress" Height="6"/>
+            <ProgressBar IsIndeterminate="True" IsVisible="{Binding Updates.IsChecking}" Height="4"/>
+            <WrapPanel><Button Content="Проверить обновления" Command="{Binding Updates.CheckCommand}" AutomationProperties.AutomationId="CheckUpdatesButton" Margin="0,0,8,8"/><Button Content="Скачать" Command="{Binding Updates.DownloadCommand}" AutomationProperties.AutomationId="DownloadUpdateButton" Margin="0,0,8,8"/><Button Content="Установить и перезапустить" Command="{Binding Updates.RestartCommand}" IsVisible="{Binding Updates.IsReady}" AutomationProperties.AutomationId="RestartUpdateButton" Margin="0,0,8,8"/><Button Content="Остановить загрузку" Command="{Binding Updates.CancelCommand}" IsVisible="{Binding Updates.IsDownloading}" AutomationProperties.AutomationId="CancelUpdateButton"/></WrapPanel>
+          </StackPanel></ScrollViewer>
+          <Grid Grid.Row="1" IsVisible="{Binding ShowHistory}" RowDefinitions="Auto,Auto,*,Auto,Auto">
+            <TextBlock Text="История и восстановление" FontSize="26" FontWeight="SemiBold"/>
+            <TextBlock Grid.Row="1" Text="{Binding HistoryBackupVolume}" Classes="caption" Margin="0,8"/>
+            <ListBox Grid.Row="2" ItemsSource="{Binding History}" SelectedItem="{Binding SelectedRun}" AutomationProperties.AutomationId="HistoryList"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Caption}" TextWrapping="Wrap" Margin="4,10"/></DataTemplate></ListBox.ItemTemplate></ListBox>
+            <TextBlock Grid.Row="3" Text="Восстановление сначала покажет новый план. Запись начнётся только после просмотра и применения." Classes="caption" Margin="0,10"/>
+            <WrapPanel Grid.Row="4"><Button Content="Подготовить восстановление" Command="{Binding RestoreCommand}" AutomationProperties.AutomationId="RestoreButton" Margin="0,0,8,0"/><Button Content="Удалить резервную копию…" Command="{Binding CleanupBackupCommand}" AutomationProperties.AutomationId="CleanupBackupButton"/></WrapPanel>
+          </Grid>
+          <ScrollViewer Grid.Row="1" IsVisible="{Binding ShowCapabilities}"><StackPanel Spacing="12">
+            <TextBlock Text="Какие данные синхронизируются" FontSize="26" FontWeight="SemiBold"/>
+            <TextBlock Text="Имена, телефоны, почта, адреса, даты, ссылки, организации, заметки и остальные доступные категории. Фото, ярлыки и избранное поддерживаются отдельными операциями." TextWrapping="Wrap"/>
+            <TextBlock Text="Синхронизируются сохранённые контакты. Другие контакты, корпоративный каталог и корзина Google не входят в эту папку. Неизвестные поля блокируют запись затронутой категории с пояснением причины." Classes="caption"/>
+            <ItemsControl ItemsSource="{Binding Capabilities}"><ItemsControl.ItemTemplate><DataTemplate><Grid ColumnDefinitions="*,*" Margin="0,6"><TextBlock Text="{Binding Title}"/><TextBlock Grid.Column="1" Text="{Binding Mode}" Classes="caption"/></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+          </StackPanel></ScrollViewer>
+        </Grid>
+      </Border>
+      <Border IsVisible="{Binding ShowDeleteConfirmation}" Background="#99000000" Padding="28" AutomationProperties.AutomationId="DeleteModal">
+        <Border Classes="card" MaxWidth="640" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <StackPanel Spacing="14"><TextBlock Text="Удалить выбранные записи?" FontSize="24" FontWeight="SemiBold"/><ScrollViewer MaxHeight="250"><TextBlock Text="{Binding DeleteWarning}" TextWrapping="Wrap"/></ScrollViewer>
+            <StackPanel IsVisible="{Binding RequiresDeletePhrase}" Spacing="6"><TextBlock Text="Это значительная часть адресной книги. Для подтверждения введи УДАЛИТЬ." TextWrapping="Wrap"/><TextBox Text="{Binding DeletePhrase}" AutomationProperties.AutomationId="DeletePhraseInput"/><TextBlock Text="{Binding DeleteValidation}" Classes="dangerText" TextWrapping="Wrap" AutomationProperties.AutomationId="DeleteValidation"/></StackPanel>
+            <WrapPanel><Button Content="Удалить выбранные записи" Classes="danger" Command="{Binding ConfirmDeletesCommand}" AutomationProperties.AutomationId="ConfirmDeletesButton" Margin="0,0,8,0"/><Button Content="Вернуться к плану" Command="{Binding DismissDeletesCommand}" AutomationProperties.AutomationId="DismissDeletesButton"/></WrapPanel>
+          </StackPanel>
+        </Border>
+      </Border>
+      <Border IsVisible="{Binding ShowBackupDeleteConfirmation}" Background="#99000000" Padding="28">
+        <Border Classes="card" MaxWidth="600" HorizontalAlignment="Center" VerticalAlignment="Center"><StackPanel Spacing="14"><TextBlock Text="Удалить резервную копию?" FontSize="24" FontWeight="SemiBold"/><TextBlock Text="{Binding BackupDeleteWarning}" TextWrapping="Wrap"/><WrapPanel><Button Content="Удалить копию без восстановления" Classes="danger" Command="{Binding ConfirmBackupDeleteCommand}" AutomationProperties.AutomationId="ConfirmCleanupBackupButton" Margin="0,0,8,0"/><Button Content="Сохранить копию" Command="{Binding DismissBackupDeleteCommand}" AutomationProperties.AutomationId="DismissBackupDeleteButton"/></WrapPanel></StackPanel></Border>
+      </Border>
     </Grid>
-    <StackPanel Grid.Row="3" Spacing="8" Margin="0,16,0,0"><ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="3"/><Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.AutomationId="StatusText" AutomationProperties.Name="{Binding Status}"/><Button Grid.Column="1" Content="Остановить" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" AutomationProperties.AutomationId="CancelButton"/></Grid><Expander Header="Результат каждого действия" IsVisible="{Binding HasResults}" AutomationProperties.AutomationId="ResultsExpander"><ScrollViewer MaxHeight="120"><ItemsControl ItemsSource="{Binding Results}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Margin="0,3"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer></Expander></StackPanel>
+    <StackPanel Grid.Row="3" Spacing="4" Margin="0,8,0,0">
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="3"/>
+      <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" Classes="caption" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.AutomationId="StatusText" AutomationProperties.Name="{Binding Status}"/><Button Grid.Column="1" Content="Остановить" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" AutomationProperties.AutomationId="CancelButton"/></Grid>
+    </StackPanel>
   </Grid>
 </Window>

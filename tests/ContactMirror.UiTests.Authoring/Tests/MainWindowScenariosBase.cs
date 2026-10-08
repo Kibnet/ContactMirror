@@ -10,7 +10,8 @@ public abstract partial class MainWindowScenariosBase<TSession> : UiTestBase<TSe
     where TSession : class, IUiTestSession
 {
     protected virtual void CaptureCheckpoint(string state) { }
-    protected void PreparePreview() => Page.EnterText(static page => page.FolderInput, Path.Combine(Path.GetTempPath(), "ContactMirror-ui-test"))
+    protected static string ReadyTestFolder(string name) => Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), name)).FullName;
+    protected void PreparePreview() => Page.EnterText(static page => page.FolderInput, ReadyTestFolder("ContactMirror-ui-test"))
         .ClickButton(static page => page.ConnectGoogleButton)
         .WaitUntilNameContains(static page => page.AccountLabel, "example@example.test")
         .ClickButton(static page => page.CheckChangesButton)
@@ -20,7 +21,7 @@ public abstract partial class MainWindowScenariosBase<TSession> : UiTestBase<TSe
     public async Task Onboarding_preview_apply_partial_result()
     {
         CaptureCheckpoint("onboarding");
-        Page.EnterText(static page => page.FolderInput, Path.Combine(Path.GetTempPath(), "ContactMirror-ui-test"))
+        Page.EnterText(static page => page.FolderInput, ReadyTestFolder("ContactMirror-ui-test"))
             .ClickButton(static page => page.ConnectGoogleButton)
             .WaitUntilNameContains(static page => page.AccountLabel, "example@example.test")
             .ClickButton(static page => page.CheckChangesButton)
@@ -33,7 +34,7 @@ public abstract partial class MainWindowScenariosBase<TSession> : UiTestBase<TSe
             .ClickButton(static page => page.ApplyButton)
             .WaitUntilNameContains(static page => page.StatusText, "Выполнено частично");
         CaptureCheckpoint("partial-result");
-        await Assert.That(Page.StatusText.Name).Contains("1 ошибок");
+        await Assert.That(Page.StatusText.Name).Contains("ошибок завершения: 1");
     }
     [Test]
     [NotInParallel(DesktopUiConstraint)]
@@ -47,7 +48,7 @@ public abstract partial class MainWindowScenariosBase<TSession> : UiTestBase<TSe
             .WaitUntilNameContains(static page => page.ApplyButton, "3")
             .ClickButton(static page => page.SkipConflictButton)
             .WaitUntilNameContains(static page => page.ApplyButton, "2");
-        await Assert.That(Page.ApplyButton.Name).IsEqualTo("Применить 2");
+        await Assert.That(Page.ApplyButton.Name).IsEqualTo("Применить 2 изменения");
     }
     [Test]
     [NotInParallel(DesktopUiConstraint)]

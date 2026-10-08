@@ -1,5 +1,26 @@
 # Проверки локальной сборки
 
+## Текущий EXEC: UX/UI workspace, 2026-10-08
+
+Реализована подтверждённая `specs/2026-10-08-ux-workspace.md`: группировка по identity контакта, отдельный выбор полей, значения перед решениями, компактный и узкий режимы, отдельные настройки/история/справка, честные результаты применения, подтверждения удалений, клавиатура и обе темы.
+
+| Проверка итогового исходного кода | Результат | Evidence |
+|---|---|---|
+| Release solution | PASS, 0 ошибок и предупреждений | `dotnet build ContactMirror.sln -c Release -m:1` |
+| Core и Google xUnit | PASS, 107/107 и 147/147 | Release suites; исходные engine/API/storage contracts сохранены |
+| Headless UI | PASS, 26/26, 0 skipped, 16.100s | `tests/ContactMirror.UiTests.Headless/bin/Release/net10.0/TestResults/ContactMirror.UiTests.Headless-windows-net10.0-report.html` |
+| Настоящее окно Windows, FlaUI | PASS, 9/9, 0 skipped, 1m19s738ms | `chat-artifacts/ux-review/native-final.log`; native HTML report |
+| Ordinary Desktop `--demo` | PASS в native suite | Production project EXE, временная папка, synthetic preview; demo preferences восстановлены по исходным байтам |
+| Отдельное post-EXEC ревью | PASS, все 3 HIGH и 2 MEDIUM исправлены | Code/negative checks, independently inspected PNG и final native log; процедурный advisory/adversarial fallback, sandbox unrestricted |
+
+Проверены setup в обоих порядках с валидной/невалидной папкой, одинаковые имена разных identity, точные field choices, разрешённые recovery sides и collision, скрытые фильтром выборы, failed/unknown/unattempted, stale apply, destination/copies удаления, inline phrase validation, modal/activity guards, Tab/Escape/focus, missing/null/empty и буквальные JSON-looking строки. Raw technical values доступны для трёх сторон. Whole-contact repair/upload/readback сохранил правки и фотографии, следующая проверка дала no-op.
+
+Инспектированы light/dark PNG при 1180×820, 1000×680 и 820×640. Актуальные примеры: `chat-artifacts/ui/20261008-200608-136/ux-conflict-1000x680.png`, `20261008-200608-314/ux-conflict-dark-1000x680.png`, `20261008-200608-799/ux-narrow-contact-details.png`, `20261008-200609-647/ux-technical-exact-values.png`. Native compact name/photo: `20261008-200816-621/contact-edit-blocked-photo-values-native.png` и `contact-edit-blocked-name-values-native.png`. Контраст supporting text 6.89/8.23, indicators 3.49/3.69, primary text 5.63; текущий native DPI120. Для 10 000 элементов созданы 7 визуальных контейнеров, отмена заняла 27ms; из 2000 diff rows созданы 4, UI ping при подготовке деталей 15ms. Это локальные fixture-замеры.
+
+Автоматизированный whole-contact repair/upload записан в `chat-artifacts/ux-review/video/before.mp4` (29.934s, 2684×1924, DPI216) и `after.mp4` (30s, 1250×876, DPI120); извлечённые кадры и native checkpoints просмотрены. Разные DPI явно ограничивают сравнение физических размеров. После исправления позиции recording window повторная after-запись полностью помещается в экран.
+
+Все проверки используют вымышленные данные. Настоящий Google, установленная версия, отдельная физическая DPI-матрица и публикация не проверялись/не изменялись. Изменения остаются локально без commit/push. Технической read-only изоляции reviewer нет; отдельный review выполнен без мутаций по процедурному запрету. Полная AC-mapping и stop decision — в SPEC; generated evidence остаётся в ignored `chat-artifacts`.
+
 ## Текущий EXEC: сравнение и отправка всего контакта, 2026-10-08
 
 Реализация по `specs/2026-10-07-contact-edit-diff.md` подтверждена пользователем. Проверки используют вымышленные контакты; реальные Google-контакты и установленная версия приложения в этой задаче не изменялись.

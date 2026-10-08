@@ -78,15 +78,15 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private double _settingsPanelHeight = 170;
     [ObservableProperty] private double _workspaceHeaderHeight = 300;
     public bool IsDemo { get; }
-    public bool CanConfigure => !IsBusy && !_activity.IsActive && !_activity.IsApplying && !_closeRequested;
+    public bool CanConfigure => !IsBusy && !_activity.IsActive && !_activity.IsApplying && !_closeRequested && !ShowDeleteConfirmation && !ShowBackupDeleteConfirmation;
     public bool CanOverrideOAuth => CanConfigure && !ContactMirror.Infrastructure.Configuration.ApplicationPaths.IsValidation && !IsDemo;
     public UpdatesViewModel Updates { get; }
-    public bool IsOnboarding => !IsConnected;
-    public bool CanCheck => IsConnected && CanConfigure && !string.IsNullOrWhiteSpace(Folder);
+    public bool IsOnboarding => !IsConnected || !FolderReady;
+    public bool CanCheck => IsConnected && CanConfigure && FolderReady;
     public bool CanDisconnect => IsConnected && CanConfigure;
-    public bool CanApply => HasPreview && CanConfigure && Entries.Any(x => x.CanApply);
-    public bool CanCleanupBackup => !IsBusy && IsConnected && SelectedRun?.CanCleanup == true;
-    public bool CanRestoreBackup => !IsBusy && IsConnected && SelectedRun?.Summary.BackupAvailable == true;
+    public bool CanApply => HasPreview && CanConfigure && RecoverySelectionValid && Entries.Any(x => x.CanApply);
+    public bool CanCleanupBackup => CanConfigure && IsConnected && SelectedRun?.CanCleanup == true;
+    public bool CanRestoreBackup => CanConfigure && IsConnected && SelectedRun?.Summary.BackupAvailable == true;
     public bool HasError => !string.IsNullOrEmpty(Error);
     public bool HasNotices => !string.IsNullOrEmpty(Notice);
     public bool HasResults => Results.Count > 0;
@@ -109,10 +109,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public IReadOnlyList<string> Filters { get; } = ["Все изменения", "В Google", "В папку", "Требуют внимания", "Удаления"];
     public IReadOnlyList<FieldCapability> Capabilities => CapabilityRegistry.Fields;
 
-    partial void OnIsConnectedChanged(bool value) { OnPropertyChanged(nameof(IsOnboarding)); RefreshCommands(); }
+    partial void OnIsConnectedChanged(bool value) { NotifySetup(); RefreshCommands(); }
     partial void OnIsBusyChanged(bool value) => RefreshCommands();
-    partial void OnHasPreviewChanged(bool value) => RefreshCommands();
-    partial void OnFolderChanged(string value) { InvalidatePreview(); RefreshCommands(); }
+    partial void OnHasPreviewChanged(bool value) { RefreshCommands(); NotifyPlan(); }
+    partial void OnFolderChanged(string value) { ValidateFolder(); InvalidatePreview(); ShowResult = false; NotifySetup(); RefreshCommands(); }
+    partial void OnShowDeleteConfirmationChanged(bool value) { RefreshCommands(); }
+    partial void OnShowBackupDeleteConfirmationChanged(bool value) { RefreshCommands(); }
     partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
     partial void OnNoticeChanged(string value) => OnPropertyChanged(nameof(HasNotices));
     partial void OnSearchChanged(string value) => Filter();
@@ -126,10 +128,23 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
     partial void OnSelectedEntryChanged(EntryViewModel? value)
     {
+        if (_syncingSelectedEntry) return;
+        if (value is not null)
+        {
+            var group = _groups.FirstOrDefault(g => g.Members.Contains(value));
+            if (group is not null)
+            {
+                _syncingSelectedEntry = true;
+                try { SelectedGroup = group; FieldEntries = group.VisibleMembers; SelectedEntry = value; }
+                finally { _syncingSelectedEntry = false; }
+            }
+        }
         _detailsCancellation?.Cancel(); _detailsCancellation?.Dispose(); _detailsCancellation = new();
         LocalPhotoPreview?.Dispose(); GooglePhotoPreview?.Dispose(); LocalPhotoPreview = null; GooglePhotoPreview = null;
         PlannedPhotoPreview?.Dispose(); PlannedPhotoPreview = null;
         DiffRows = []; DiffSummary = "";
+        DisplayRows = [];
+        NotifyDetails();
         OnPropertyChanged(nameof(HasSelectedEntry)); OnPropertyChanged(nameof(HasSelectedConflict));
         foreach (var property in new[] { nameof(HasPhotoComparison), nameof(HasRepairAction), nameof(RepairCaption), nameof(PhotoStatus), nameof(PhotoBaseline), nameof(LocalPhotoInfo), nameof(GooglePhotoInfo), nameof(HasPlannedPhoto), nameof(PlannedPhotoInfo) }) OnPropertyChanged(property);
         RefreshCommands();
@@ -143,12 +158,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
         try
         {
             var rows = await Task.Run(() => PreviewDiff.Build(entry.Entry, token), token);
+            var displayed = await Task.Run(() => WorkspacePresentation.PresentRows(rows, entry, token), token);
             if (entry.Entry.PhotoComparison is { } photo)
             {
                 (local, remote, planned) = await Task.Run(() => DecodePhotos(photo), token);
             }
             if (token.IsCancellationRequested || SelectedEntry != entry) return;
             DiffRows = rows;
+            DisplayRows = displayed;
             DiffSummary = $"Изменённых значений: {rows.Count} · " + string.Join(", ", rows.Select(r => r.Title).Distinct());
             LocalPhotoPreview = local; GooglePhotoPreview = remote; PlannedPhotoPreview = planned; local = null; remote = null; planned = null;
         }
@@ -212,21 +229,24 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     [RelayCommand(CanExecute = nameof(CanCheck))] private async Task CheckAsync() => await RunAsync(async token =>
     {
-        ShowDeleteConfirmation = false;
+        InvalidatePreview(); ShowResult = false;
         var folder = Folder; var account = _account!; var progress = Progress();
         _preview = await Task.Run(() => _sync.PrepareAsync(folder, account, progress, token), token);
-        LoadPreview(_preview);
+        var preparedEntries = await Task.Run(() => _preview.Entries.Select(e => new EntryViewModel(e)).ToArray(), token);
+        LoadPreview(_preview, preparedEntries);
         if (_persist) (DesktopPreferences.Load(IsDemo) with { Folder = Folder }).Save(IsDemo);
     });
 
     [RelayCommand(CanExecute = nameof(CanApply))] private async Task ApplyAsync()
     {
+        if (!CanApply) return;
         var deleted = Entries.Count(x => x.CanApply && x.Entry.IsDestructiveFor(x.Resolution));
         if (deleted > 0 && !DeletesConfirmed)
         {
             ShowDeleteConfirmation = true;
-            DeleteWarning = $"Будет удалено: {deleted}. Будет сохранена резервная копия. " +
-                (_preview!.RequiresDeletionConfirmation(deleted) ? "Это значительная часть адресной книги. Введите УДАЛИТЬ для подтверждения." : "Подтвердите выбранные удаления.");
+            var destructive = Entries.Where(x => x.CanApply && x.Entry.IsDestructiveFor(x.Resolution)).ToArray();
+            RequiresDeletePhrase = _preview!.RequiresDeletionConfirmation(deleted); DeleteValidation = ""; DeletePhrase = "";
+            DeleteWarning = $"Из Google: {destructive.Count(x => x.Entry.DeletesRemote(x.Resolution))} · Из папки: {destructive.Count(x => x.Entry.DeletesLocal(x.Resolution))}\n\n" + string.Join("\n\n", destructive.Select(WorkspacePresentation.DeletionDescription)) + "\n\nПеред записью будет создана резервная копия. Восстановление запускается отдельно через историю.";
             return;
         }
         await ApplyConfirmedAsync();
@@ -234,10 +254,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     [RelayCommand] private async Task ConfirmDeletesAsync()
     {
-        if (_preview is null || IsBusy) return;
+        if (!ShowDeleteConfirmation || _preview is null || IsBusy || _activity.IsActive || _activity.IsApplying || _closeRequested) return;
         var deleted = Entries.Count(x => x.CanApply && x.Entry.IsDestructiveFor(x.Resolution));
         if (_preview?.RequiresDeletionConfirmation(deleted) == true && DeletePhrase.Trim() != "УДАЛИТЬ")
-        { Error = "Для подтверждения большого числа удалений введите УДАЛИТЬ."; return; }
+        { DeleteValidation = "Введите УДАЛИТЬ для подтверждения выбранных удалений."; return; }
         DeletesConfirmed = true;
         ShowDeleteConfirmation = false;
         await ApplyConfirmedAsync();
@@ -248,22 +268,24 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         var choices = Entries.Where(x => x.CanApply).Select(x => new PlanChoice(x.Entry.Key, x.Resolution)).ToArray();
         if (_preview is null || choices.Length == 0) return;
+        var captured = Entries.Where(x => x.CanApply).Select(x => (x.Entry, x.Resolution)).ToArray();
         var preview = _preview; var progress = Progress();
         var result = await Task.Run(() => _sync.ApplyAsync(preview, choices, progress, token), token);
         _progressVersion++;
         Results.Clear();
         foreach (var operation in result.Operations) Results.Add(operation);
         OnPropertyChanged(nameof(HasResults));
-        Status = result.IsComplete ? $"Синхронизировано: {result.Confirmed} изменений." : $"Выполнено частично: {result.Confirmed} подтверждено, {result.Failed} ошибок, {result.Unknown} с неизвестным результатом. Проверьте изменения для продолжения.";
+        PresentResult(result, captured);
         LastRun = $"Последняя синхронизация: {DateTime.Now:g}";
         InvalidatePreview();
         await RefreshHistoryAsync(CancellationToken.None);
     });
 
     [RelayCommand] private void Cancel() => _cancellation?.Cancel();
-    [RelayCommand] private void ToggleSettings() => ShowSettings = !ShowSettings;
-    [RelayCommand] private void ToggleCapabilities() => ShowCapabilities = !ShowCapabilities;
-    [RelayCommand] private async Task ToggleHistoryAsync()
+    [RelayCommand(CanExecute = nameof(CanConfigure))] private void ToggleSettings() => ShowSettings = !ShowSettings;
+    [RelayCommand(CanExecute = nameof(CanConfigure))] private void ToggleCapabilities() => ShowCapabilities = !ShowCapabilities;
+    [RelayCommand(CanExecute = nameof(CanConfigure))]
+    private async Task ToggleHistoryAsync()
     {
         ShowHistory = !ShowHistory;
         if (ShowHistory && !string.IsNullOrWhiteSpace(Folder)) await RunAsync(RefreshHistoryAsync);
@@ -278,24 +300,26 @@ public sealed partial class MainWindowViewModel : ObservableObject
     });
     [RelayCommand(CanExecute = nameof(CanRestoreBackup))] private async Task RestoreAsync()
     {
-        if (_account is null || SelectedRun is null || IsBusy) return;
+        if (_account is null || SelectedRun is null || !CanRestoreBackup) return;
         await RunAsync(async token =>
         {
             var folder = Folder; var account = _account; var runId = SelectedRun.Summary.Id; var progress = Progress();
-            LoadPreview(await Task.Run(() => _sync.PrepareRestoreAsync(folder, account, runId, progress, token), token));
+            var restored = await Task.Run(() => _sync.PrepareRestoreAsync(folder, account, runId, progress, token), token);
+            var preparedEntries = await Task.Run(() => restored.Entries.Select(e => new EntryViewModel(e)).ToArray(), token);
+            LoadPreview(restored, preparedEntries);
             ShowHistory = false;
         });
     }
     [RelayCommand(CanExecute = nameof(CanCleanupBackup))] private void CleanupBackup()
     {
-        if (SelectedRun is null) return;
+        if (!CanCleanupBackup || SelectedRun is null) return;
         BackupDeleteWarning = $"Удалить резервную копию от {SelectedRun.Summary.StartedAt.ToLocalTime():g}? Освободится {SelectedRun.BackupSize}. После удаления восстановление этой операции станет недоступно. Журнал операций сохранится.";
         ShowBackupDeleteConfirmation = true;
     }
     [RelayCommand] private void DismissBackupDelete() => ShowBackupDeleteConfirmation = false;
     [RelayCommand] private async Task ConfirmBackupDeleteAsync()
     {
-        if (!ShowBackupDeleteConfirmation || !CanCleanupBackup || SelectedRun is null || _account is null) return;
+        if (!ShowBackupDeleteConfirmation || IsBusy || _activity.IsActive || _activity.IsApplying || _closeRequested || SelectedRun?.CanCleanup != true || _account is null) return;
         var run = SelectedRun.Summary;
         ShowBackupDeleteConfirmation = false;
         await RunAsync(async token =>
@@ -307,7 +331,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             Status = "Резервная копия удалена. Журнал операций сохранён.";
         });
     }
-    [RelayCommand] private void UseLocal() { SelectedEntry?.Choose(Resolution.UseLocal); UpdateSelection(); }
+    [RelayCommand(CanExecute = nameof(CanChooseLocal))] private void UseLocal() => ChooseVersion(Resolution.UseLocal);
     [RelayCommand(CanExecute = nameof(CanRepairGoogleSnapshot))]
     private async Task RepairGoogleSnapshotAsync()
     {
@@ -319,14 +343,22 @@ public sealed partial class MainWindowViewModel : ObservableObject
             var result = await Task.Run(() => _sync.RepairGoogleSnapshotAsync(preview, key, progress, token), token);
             Results.Clear(); foreach (var operation in result.Operations) Results.Add(operation);
             OnPropertyChanged(nameof(HasResults));
+            PresentResult(result, [(SelectedEntry!.Entry, Resolution.Automatic)]);
             InvalidatePreview(); Entries.Clear(); VisibleEntries.Clear(); SelectedEntry = null;
             await RefreshHistoryAsync(token);
             Status = result.IsComplete ? "Правки сохранены. Служебная копия исправлена. Нажмите «Проверить изменения», чтобы отправить правки в Google." : "Локальное исправление не завершено. Резервная копия сохранена; проверьте изменения для восстановления.";
+            ResultSummary = Status;
         });
     }
-    [RelayCommand] private void UseGoogle() { SelectedEntry?.Choose(Resolution.UseGoogle); UpdateSelection(); }
-    [RelayCommand] private void Skip() { SelectedEntry?.Choose(Resolution.Skip); UpdateSelection(); }
-    [RelayCommand] private void NextConflict() => SelectedEntry = Entries.FirstOrDefault(x => x.IsConflict && !x.CanApply);
+    [RelayCommand(CanExecute = nameof(CanChooseGoogle))] private void UseGoogle() => ChooseVersion(Resolution.UseGoogle);
+    [RelayCommand(CanExecute = nameof(CanChooseAny))] private void Skip() { if (!CanChooseAny) return; SelectedEntry?.Choose(Resolution.Skip); UpdateSelection(); }
+    [RelayCommand] private void NextConflict()
+    {
+        var conflicts = Entries.Where(x => x.IsConflict && !x.CanApply).ToArray();
+        if (conflicts.Length == 0) { Status = "Нерешённых конфликтов нет."; return; }
+        var next = conflicts[(Array.IndexOf(conflicts, SelectedEntry) + 1) % conflicts.Length];
+        Search = ""; FilterIndex = 0; SelectedEntry = next; if (IsNarrow) ShowNarrowDetails = true;
+    }
     [RelayCommand] private void OpenFolder() => TryOpen(Folder);
     [RelayCommand] private void OpenFile() => TryOpen(SelectedFile);
     [RelayCommand] private void ShowFile() { if (File.Exists(SelectedFile)) Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{SelectedFile}\"") { UseShellExecute = true }); }
@@ -338,7 +370,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
     [RelayCommand] private void SelectSafe()
     {
-        foreach (var entry in Entries) entry.IsSelected = entry.Entry.DefaultSelected;
+        if (!HasPreview || !CanConfigure) return;
+        _selectionBatch = true;
+        try { foreach (var entry in Entries) entry.IsSelected = entry.Entry.DefaultSelected && !entry.IsRecoveryAlternative && !entry.Entry.IsDestructiveFor(entry.Resolution); }
+        finally { _selectionBatch = false; }
         UpdateSelection();
     }
 
@@ -347,36 +382,58 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _accountConnector = account; _sync = coordinator; ConfigurationHint = account.ConfigurationHint;
         _account = null; SetAccount(); InvalidatePreview();
     }
-    private void LoadPreview(SyncPreview preview)
+    private void LoadPreview(SyncPreview preview, IReadOnlyList<EntryViewModel>? preparedEntries = null)
     {
         _progressVersion++;
         _preview = preview;
         Results.Clear(); Entries.Clear();
         OnPropertyChanged(nameof(HasResults));
-        foreach (var entry in preview.Entries)
+        foreach (var viewModel in preparedEntries ?? preview.Entries.Select(e => new EntryViewModel(e)).ToArray())
         {
-            var viewModel = new EntryViewModel(entry);
-            viewModel.PropertyChanged += (_, _) => UpdateSelection();
+            viewModel.PropertyChanged += (_, args) => { if (args.PropertyName is nameof(EntryViewModel.IsSelected) or nameof(EntryViewModel.Resolution)) UpdateSelection(); };
             Entries.Add(viewModel);
         }
+        ShowResult = false; SelectedGroup = null; BuildGroups();
         HasPreview = true; DeletesConfirmed = false; DeletePhrase = "";
         Notice = string.Join("\n", preview.Notices);
         Status = preview.IsRecovery ? "Восстановление: проверьте план компенсации. Изменения в Google появятся после применения." : Entries.Count == 0 ? "Изменений нет. Google и папка согласованы." : $"Сравнение завершено. Контактов: {preview.ContactCount}, ярлыков: {preview.GroupCount}.";
-        Filter(); SelectedEntry = VisibleEntries.FirstOrDefault(); UpdateSelection();
+        Filter(); UpdateSelection();
     }
     private void Filter()
     {
         VisibleEntries.Clear();
-        foreach (var entry in Entries.Where(x => (FilterIndex switch { 1 => x.ToGoogle, 2 => x.ToFolder, 3 => x.IsConflict || !x.Entry.IsSelectable, 4 => x.Entry.IsDestructive, _ => true }) && (string.IsNullOrEmpty(Search) || (x.Entry.Name + x.FieldLabel + x.Entry.Field).Contains(Search, StringComparison.OrdinalIgnoreCase)))) VisibleEntries.Add(entry);
+        foreach (var entry in Entries.Where(x => (FilterIndex switch { 1 => x.ToGoogle, 2 => x.ToFolder, 3 => x.IsConflict && !x.CanApply || !x.Entry.IsSelectable, 4 => x.Entry.IsDestructiveFor(x.Resolution), _ => true }) && (string.IsNullOrWhiteSpace(Search) || x.SearchText.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase)))) VisibleEntries.Add(entry);
+        var visible = VisibleEntries.ToHashSet();
+        var groups = new List<ContactGroupViewModel>();
+        foreach (var group in _groups)
+        {
+            var members = group.Members.Where(visible.Contains).ToArray();
+            if (!group.VisibleMembers.SequenceEqual(members)) group.VisibleMembers = members;
+            group.Refresh(); if (group.VisibleMembers.Count > 0) groups.Add(group);
+        }
+        if (!VisibleGroups.SequenceEqual(groups)) VisibleGroups = groups;
+        if (SelectedGroup is null || !groups.Contains(SelectedGroup)) SelectedGroup = groups.FirstOrDefault();
+        else { if (!FieldEntries.SequenceEqual(SelectedGroup.VisibleMembers)) FieldEntries = SelectedGroup.VisibleMembers; if (!FieldEntries.Contains(SelectedEntry!)) SelectedEntry = FieldEntries.FirstOrDefault(); }
+        RefreshSelectionSummary();
+        NotifyPlan();
     }
     private void UpdateSelection()
     {
+        if (_selectionBatch) return;
         Counts = $"В Google: {Entries.Count(x => x.ToGoogle)}    В папку: {Entries.Count(x => x.ToFolder)}    Конфликты: {Entries.Count(x => x.IsConflict)}    Удаления: {Entries.Count(x => x.Entry.IsDestructiveFor(x.Resolution))}";
         var count = Entries.Count(x => x.CanApply);
-        SelectionSummary = $"Выбрано: {count} · Отложено конфликтов: {Entries.Count(x => x.IsConflict && !x.CanApply)}. Перед записью будет создана резервная копия.";
-        ApplyCaption = $"Применить {count}"; DeletesConfirmed = false; RefreshCommands();
+        ApplyCaption = $"Применить {count} {WorkspacePresentation.Changes(count)}"; DeletesConfirmed = false; Filter(); RefreshCommands(); NotifyPlan();
     }
-    private void InvalidatePreview() { HasPreview = false; _preview = null; ShowDeleteConfirmation = false; RefreshCommands(); }
+    private void RefreshSelectionSummary()
+    {
+        var chosen = Entries.Where(x => x.CanApply).ToArray();
+        var contacts = chosen.Where(x => x.Entry.Entity == EntityKind.Contact).Select(x => x.Entry.EntityId).Distinct().Count();
+        var labels = chosen.Where(x => x.Entry.Entity == EntityKind.Group).Select(x => x.Entry.EntityId).Distinct().Count();
+        var visible = VisibleEntries.ToHashSet();
+        var hidden = chosen.Count(x => !visible.Contains(x));
+        SelectionSummary = $"Выбрано: {contacts} контактов · {chosen.Length} изменений" + (labels > 0 ? $" · {labels} ярлыков" : "") + (hidden > 0 ? $" · {hidden} вне фильтра" : "") + $" · Нерешённых конфликтов: {Entries.Count(x => x.IsConflict && !x.CanApply)}";
+    }
+    private void InvalidatePreview() { HasPreview = false; _preview = null; ShowDeleteConfirmation = false; NotifyDetails(); RefreshCommands(); }
     private void SetAccount() { IsConnected = _account is not null; AccountLabel = _account?.Email ?? "Google ещё не подключён"; }
     private async Task RefreshHistoryAsync(CancellationToken token)
     {
@@ -410,7 +467,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
     private async Task RunAsync(Func<CancellationToken, Task> action)
     {
-        if (IsBusy || _closeRequested) return;
+        if (!CanConfigure) return;
         using var activity = _activity.TryEnter();
         if (activity is null) { Error = "Приложение занято перезапуском или другой операцией. Дождитесь её завершения."; return; }
         _idle = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -455,6 +512,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanRestoreBackup)); RestoreCommand.NotifyCanExecuteChanged();
         CheckCommand.NotifyCanExecuteChanged(); ApplyCommand.NotifyCanExecuteChanged(); NewContactCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanRepairGoogleSnapshot)); RepairGoogleSnapshotCommand.NotifyCanExecuteChanged();
+        ToggleSettingsCommand.NotifyCanExecuteChanged(); ToggleCapabilitiesCommand.NotifyCanExecuteChanged(); ToggleHistoryCommand.NotifyCanExecuteChanged(); NotifyDetails();
+        OnPropertyChanged(nameof(CanChooseAny)); SkipCommand.NotifyCanExecuteChanged();
     }
     private string FindFile(SyncEntry entry)
     {
@@ -480,14 +539,18 @@ public sealed partial class EntryViewModel(SyncEntry entry) : ObservableObject
     [ObservableProperty] private bool _isSelected = entry.DefaultSelected;
     [ObservableProperty] private Resolution _resolution = Resolution.Automatic;
     public bool IsConflict => Entry.Kind == ChangeKind.Conflict;
-    public bool CanApply => IsSelected && Entry.IsSelectable && (!IsConflict || Resolution is Resolution.UseLocal or Resolution.UseGoogle);
-    public bool ToGoogle => Entry.Kind is ChangeKind.Upload or ChangeKind.CreateRemote || Entry.DeletesRemote(Resolution) || IsConflict && Resolution == Resolution.UseLocal;
-    public bool ToFolder => Entry.Kind is ChangeKind.Download or ChangeKind.CreateLocal or ChangeKind.Snapshot || Entry.DeletesLocal(Resolution) || IsConflict && Resolution == Resolution.UseGoogle;
-    public string Direction => Entry.DeletesRemote(Resolution) ? "Удалить в Google" : Entry.DeletesLocal(Resolution) ? "Удалить файл" : Entry.Kind switch { ChangeKind.Upload or ChangeKind.CreateRemote => "В Google", ChangeKind.Download or ChangeKind.CreateLocal or ChangeKind.Snapshot => "В папку", ChangeKind.Conflict => "Разные правки — выберите версию", ChangeKind.Blocked => "Требует исправления", ChangeKind.Reconcile => "Проверить неизвестный результат", _ => Entry.Kind.ToString() };
-    public string FieldLabel => Entry.Entity == EntityKind.Group && Entry.Field == "$entity" ? "Ярлык" : CapabilityRegistry.Title(Entry.Field);
+    public bool CanApply => IsSelected && Entry.IsSelectable && (!IsConflict || Resolution == Resolution.UseLocal && AllowsLocal || Resolution == Resolution.UseGoogle && AllowsGoogle);
+    public bool ToGoogle => !Entry.Field.StartsWith("$journal:", StringComparison.Ordinal) && !Entry.Field.StartsWith("$relink:", StringComparison.Ordinal) && (Entry.Field.StartsWith("$restore:", StringComparison.Ordinal) || Entry.Field == "$restoreCreate" || Entry.Kind is ChangeKind.Upload or ChangeKind.CreateRemote || Entry.DeletesRemote(Resolution) || IsConflict && Resolution == Resolution.UseLocal);
+    public bool ToFolder => Entry.Field.StartsWith("$relink:", StringComparison.Ordinal) && Resolution == Resolution.UseGoogle || Entry.Field is "$restoreFile" or "$restoreLocal" || Entry.Field.StartsWith("$restore:", StringComparison.Ordinal) || Entry.Field == "$restoreCreate" || Entry.Kind is ChangeKind.Download or ChangeKind.CreateLocal or ChangeKind.Snapshot || Entry.DeletesLocal(Resolution) || IsConflict && Resolution == Resolution.UseGoogle && Entry.Field != "$retry";
+    public string Direction => Entry.Field.StartsWith("$relink:", StringComparison.Ordinal) ? "Связать найденную запись" : Entry.Field == "$retry" ? "Создать ещё одну запись · риск дубликата" : Entry.Field.StartsWith("$journal:", StringComparison.Ordinal) ? "Сверить незавершённую операцию" : Entry.Field == "$completeAbsent" ? "Завершить очистку связи" : Entry.Field.StartsWith("$restore:", StringComparison.Ordinal) || Entry.Field == "$restoreCreate" ? "Восстановить в обе стороны" : Entry.DeletesRemote(Resolution) ? "Удалить в Google" : Entry.DeletesLocal(Resolution) ? "Удалить файл" : Entry.Kind switch { ChangeKind.Upload or ChangeKind.CreateRemote => "В Google", ChangeKind.Download or ChangeKind.CreateLocal or ChangeKind.Snapshot => "В папку", ChangeKind.Conflict => "Разные правки — выберите версию", ChangeKind.Blocked => "Требует исправления", ChangeKind.Reconcile => "Проверить неизвестный результат", _ => Entry.Kind.ToString() };
+    public string FieldLabel => WorkspacePresentation.FieldTitle(Entry);
     public string ResolutionLabel => Resolution switch { Resolution.UseLocal => "Выбрана версия из папки", Resolution.UseGoogle => "Выбрана версия Google", Resolution.Skip => "Отложено", _ => "" };
     partial void OnResolutionChanged(Resolution value) { OnPropertyChanged(nameof(ResolutionLabel)); OnPropertyChanged(nameof(Direction)); OnPropertyChanged(nameof(ToGoogle)); OnPropertyChanged(nameof(ToFolder)); }
-    public void Choose(Resolution resolution) { Resolution = resolution; IsSelected = resolution is Resolution.UseLocal or Resolution.UseGoogle; }
+    public void Choose(Resolution resolution)
+    {
+        if (resolution == Resolution.UseLocal && !AllowsLocal || resolution == Resolution.UseGoogle && !AllowsGoogle) return;
+        Resolution = resolution; IsSelected = resolution is Resolution.UseLocal or Resolution.UseGoogle;
+    }
 }
 public sealed record RunViewModel(RunSummary Summary)
 {

@@ -21,6 +21,8 @@ public sealed class TestSyncCoordinator : ISyncCoordinator
     public bool BlockPrepare { get; set; }
     public bool GroupDeletionConflict { get; set; }
     public bool HistoryComplete { get; set; }
+    public IReadOnlyList<SyncEntry>? OverrideEntries { get; set; }
+    public Func<IReadOnlyList<PlanChoice>, SyncRunResult>? OverrideResult { get; set; }
     public int LargeEntryCount { get; set; }
     public bool SynchronousCpuPrepare { get; set; }
     public int PrepareThreadId { get; private set; }
@@ -48,7 +50,7 @@ public sealed class TestSyncCoordinator : ISyncCoordinator
     private SyncPreview Preview(string root, AccountIdentity account) => new()
     {
         Root = root, Account = account, ContactCount = 4, GroupCount = 1,
-        Entries = Empty ? [] : GroupDeletionConflict ?
+        Entries = OverrideEntries ?? (Empty ? [] : GroupDeletionConflict ?
         [new SyncEntry { Key="group-delete-conflict", EntityId=Guid.NewGuid(), Entity=EntityKind.Group, Name="Коллеги", Field="$entity", Kind=ChangeKind.Conflict, Local=null, Before=JsonNode.Parse("{\"name\":\"Коллеги\"}"), Google=JsonNode.Parse("{\"name\":\"Коллеги: новое имя\"}"), Explanation="Ярлык удалён в папке и переименован в Google." }] :
         [
             Entry("anna", "Анна Примерова", ChangeKind.Upload, "phoneNumbers", "[ { \"value\": \"+7 000 000-00-01\" } ]"),
@@ -56,7 +58,7 @@ public sealed class TestSyncCoordinator : ISyncCoordinator
             Entry("vera", "Вера Примерова", ChangeKind.Conflict, "phoneNumbers", "[ { \"value\": \"+7 000 000-00-02\" } ]"),
             Entry("gleb", "Глеб Примеров", ChangeKind.DeleteRemote, "$entity", "{}"),
             new SyncEntry { Key="blocked", EntityId=Guid.NewGuid(), Name="Даша Примерова", Field="userDefined", Kind=ChangeKind.Blocked, Explanation="Неизвестное вложенное поле. Остальные категории можно синхронизировать." }
-        ]
+        ])
     };
     private static SyncEntry Entry(string key, string name, ChangeKind kind, string field, string value) => new()
     {
@@ -68,6 +70,7 @@ public sealed class TestSyncCoordinator : ISyncCoordinator
     public Task<SyncRunResult> ApplyAsync(SyncPreview preview, IReadOnlyList<PlanChoice> choices, IProgress<SyncProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         AppliedCount++; AppliedChoices = choices;
+        if (OverrideResult is not null) return Task.FromResult(OverrideResult(choices));
         return Task.FromResult(new SyncRunResult(Guid.NewGuid(), Math.Max(0, choices.Count - (Partial ? 1 : 0)), Partial ? 1 : 0, 0, choices.Select((c, index) => new OperationResult(c.Key, Partial && index == choices.Count - 1 ? "failed" : "confirmed", Partial && index == choices.Count - 1 ? "Запрос не завершён. Проверьте изменения для продолжения." : "Операция подтверждена")).ToArray()));
     }
     public Task<IReadOnlyList<RunSummary>> GetHistoryAsync(string root, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<RunSummary>>([new(_historyId, DateTimeOffset.UtcNow, HistoryComplete ? "complete" : "partial", 2, HistoryComplete ? 0 : 1, 0, CleanupCalls == 0 ? 8192 : 0, CleanupCalls == 0)]);

@@ -3,6 +3,10 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using Avalonia.Input;
+using Avalonia.Automation;
+using Avalonia.VisualTree;
+using Avalonia.Threading;
 using ContactMirror.Application;
 using ContactMirror.Infrastructure;
 using ContactMirror.Infrastructure.Google;
@@ -21,9 +25,24 @@ public sealed partial class MainWindow : Window
         SizeChanged += (_, _) =>
         {
             if (DataContext is not MainWindowViewModel current) return;
-            current.SettingsPanelHeight = Math.Clamp(Bounds.Height - 650, 100, 240);
-            current.WorkspaceHeaderHeight = Math.Clamp(Bounds.Height - 520, 120, 400);
+            current.IsNarrow = Bounds.Width < 900;
+            UpdateComparisonLayout(current);
         };
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(viewModel.ShowNarrowDetails) or nameof(viewModel.IsNarrow)) UpdateComparisonLayout(viewModel);
+            if (args.PropertyName == nameof(viewModel.ShowDeleteConfirmation) && viewModel.ShowDeleteConfirmation)
+                Dispatcher.UIThread.Post(() => FocusById(viewModel.RequiresDeletePhrase ? "DeletePhraseInput" : "DismissDeletesButton"));
+            if (args.PropertyName == nameof(viewModel.ShowBackupDeleteConfirmation) && viewModel.ShowBackupDeleteConfirmation)
+                Dispatcher.UIThread.Post(() => FocusById("DismissBackupDeleteButton"));
+            if (args.PropertyName == nameof(viewModel.ShowDeleteConfirmation) && !viewModel.ShowDeleteConfirmation)
+                Dispatcher.UIThread.Post(() => FocusById("ApplyButton"));
+            if (args.PropertyName == nameof(viewModel.ShowBackupDeleteConfirmation) && !viewModel.ShowBackupDeleteConfirmation)
+                Dispatcher.UIThread.Post(() => FocusById("CleanupBackupButton"));
+            if (args.PropertyName == nameof(viewModel.HasPanel) && !viewModel.HasPanel)
+                Dispatcher.UIThread.Post(() => FocusById("SettingsButton"));
+        };
+        AddHandler(KeyDownEvent, HandleWorkspaceKey, RoutingStrategies.Tunnel);
         Opened += async (_, _) => await viewModel.InitializeAsync();
         Closing += async (_, args) =>
         {
@@ -33,6 +52,33 @@ public sealed partial class MainWindow : Window
             Close();
         };
         Closed += (_, _) => { viewModel.CancelCommand.Execute(null); viewModel.Detach(); };
+    }
+    private void UpdateComparisonLayout(MainWindowViewModel model)
+    {
+        var grid = this.FindControl<Grid>("ComparisonGrid")!;
+        if (model.IsNarrow) grid.ColumnDefinitions = new ColumnDefinitions(model.ShowNarrowDetails ? "0,0,*" : "*,0,0");
+        else if (grid.ColumnDefinitions[1].Width.Value == 0) grid.ColumnDefinitions = new ColumnDefinitions("0.32*,10,0.68*");
+    }
+    private void FocusById(string id) => this.GetVisualDescendants().OfType<Control>().FirstOrDefault(c => AutomationProperties.GetAutomationId(c) == id)?.Focus();
+    private void HandleWorkspaceKey(object? sender, KeyEventArgs args)
+    {
+        if (args.Key == Key.Escape)
+        {
+            if (_viewModel.ShowDeleteConfirmation) _viewModel.DismissDeletesCommand.Execute(null);
+            else if (_viewModel.ShowBackupDeleteConfirmation) _viewModel.DismissBackupDeleteCommand.Execute(null);
+            else if (_viewModel.HasPanel) _viewModel.ClosePanelCommand.Execute(null);
+            else if (_viewModel.IsNarrow && _viewModel.ShowNarrowDetails) _viewModel.BackToListCommand.Execute(null);
+            else return;
+            args.Handled = true;
+        }
+        if (args.Key == Key.Tab && (_viewModel.ShowDeleteConfirmation || _viewModel.ShowBackupDeleteConfirmation))
+        {
+            var ids = _viewModel.ShowBackupDeleteConfirmation ? new[] { "DismissBackupDeleteButton", "ConfirmCleanupBackupButton" } : _viewModel.RequiresDeletePhrase ? new[] { "DeletePhraseInput", "DismissDeletesButton", "ConfirmDeletesButton" } : new[] { "DismissDeletesButton", "ConfirmDeletesButton" };
+            var controls = ids.Select(id => this.GetVisualDescendants().OfType<Control>().First(c => AutomationProperties.GetAutomationId(c) == id)).ToArray();
+            var index = Array.FindIndex(controls, c => c.IsKeyboardFocusWithin);
+            controls[(index + (args.KeyModifiers.HasFlag(KeyModifiers.Shift) ? controls.Length - 1 : 1)) % controls.Length].Focus();
+            args.Handled = true;
+        }
     }
     private async void ChooseFolder(object? sender, RoutedEventArgs args) => await _viewModel.ConfigureAsync(async token =>
     {

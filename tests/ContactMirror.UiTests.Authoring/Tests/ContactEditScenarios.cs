@@ -44,16 +44,16 @@ public abstract partial class RealPipelineScenariosBase<TSession> where TSession
         await StartContactEditVideoAsync();
         try
         {
-            Page.EnterText(static p => p.SearchInput, "Петренко")
-                .ClickButton(static p => p.CheckChangesButton)
-                .WaitUntilNameContains(static p => p.StatusText, "Сравнение завершено");
+            Page.ClickButton(static p => p.CheckChangesButton)
+                .WaitUntilNameContains(static p => p.StatusText, "Сравнение завершено")
+                .EnterText(static p => p.SearchInput, "Петренко");
             if (Environment.GetEnvironmentVariable("CONTACTMIRROR_CONTACT_EDIT_BASELINE") == "1") { CaptureCheckpoint("contact-edit-blocked"); return; }
             Page.WaitUntilNameContains(static p => p.DiffSummary, "Фамилия");
             await Task.Delay(500); CaptureCheckpoint("contact-edit-blocked");
             await Assert.That(Page.RepairGoogleSnapshotButton.IsEnabled).IsTrue();
             Page.ClickButton(static p => p.RepairGoogleSnapshotButton)
                 .WaitUntilNameContains(static p => p.StatusText, "Правки сохранены");
-            await Assert.That(Page.ApplyButton.IsEnabled).IsFalse();
+            Page.WaitUntilNameContains(static p => p.ResultSummary, "Правки сохранены");
             Page.ClickButton(static p => p.CheckChangesButton)
                 .WaitUntilNameContains(static p => p.StatusText, "Сравнение завершено");
             CaptureCheckpoint("contact-edit-upload");

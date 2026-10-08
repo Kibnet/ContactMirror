@@ -7,6 +7,9 @@ namespace ContactMirror.Core;
 public sealed record DiffRow(string Section, string Title, string Path, string Before, string Local, string Google,
     string? BeforePath = null, string? LocalPath = null, string? GooglePath = null)
 {
+    public bool BeforeIsJson { get; init; }
+    public bool LocalIsJson { get; init; }
+    public bool GoogleIsJson { get; init; }
     public string DisplayPath => BeforePath is null && LocalPath is null && GooglePath is null ? Path
         : $"Было: {BeforePath ?? "—"}\nФайл: {LocalPath ?? "—"}\nGoogle: {GooglePath ?? "—"}";
 }
@@ -79,23 +82,23 @@ public static class PreviewDiff
                 {
                     token.ThrowIfCancellationRequested();
                     var key = JsonSemantics.Canonical(item); var localIndex = Take(lb, key); var googleIndex = Take(gb, key);
-                    if (localIndex is null || googleIndex is null) rows.Add(new(section, title + " · прежнее значение", path + $"[{index}]", Format(new(true, item)), Format(new(localIndex is not null, item)), Format(new(googleIndex is not null, item)), path + $"[{index}]", localIndex is null ? null : path + $"[{localIndex}]", googleIndex is null ? null : path + $"[{googleIndex}]"));
+                    if (localIndex is null || googleIndex is null) rows.Add(new(section, title + " · прежнее значение", path + $"[{index}]", Format(new(true, item)), Format(new(localIndex is not null, item)), Format(new(googleIndex is not null, item)), path + $"[{index}]", localIndex is null ? null : path + $"[{localIndex}]", googleIndex is null ? null : path + $"[{googleIndex}]") { BeforeIsJson = item is JsonObject or JsonArray, LocalIsJson = localIndex is not null && item is JsonObject or JsonArray, GoogleIsJson = googleIndex is not null && item is JsonObject or JsonArray });
                     index++;
                 }
                 foreach (var (key, queue) in lb)
                     while (queue.TryDequeue(out var item))
                     {
                         token.ThrowIfCancellationRequested(); var googleIndex = Take(gb, key);
-                        rows.Add(new(section, title + " · добавлено в файле", path + $"[{item.Index}]", "Нет значения", Format(new(true, item.Node)), Format(new(googleIndex is not null, item.Node)), LocalPath: path + $"[{item.Index}]", GooglePath: googleIndex is null ? null : path + $"[{googleIndex}]"));
+                        rows.Add(new(section, title + " · добавлено в файле", path + $"[{item.Index}]", "Нет значения", Format(new(true, item.Node)), Format(new(googleIndex is not null, item.Node)), LocalPath: path + $"[{item.Index}]", GooglePath: googleIndex is null ? null : path + $"[{googleIndex}]") { LocalIsJson = item.Node is JsonObject or JsonArray, GoogleIsJson = googleIndex is not null && item.Node is JsonObject or JsonArray });
                     }
                 foreach (var queue in gb.Values)
                     while (queue.TryDequeue(out var item))
                     {
-                        token.ThrowIfCancellationRequested(); rows.Add(new(section, title + " · добавлено в Google", path + $"[{item.Index}]", "Нет значения", "Нет значения", Format(new(true, item.Node)), GooglePath: path + $"[{item.Index}]"));
+                        token.ThrowIfCancellationRequested(); rows.Add(new(section, title + " · добавлено в Google", path + $"[{item.Index}]", "Нет значения", "Нет значения", Format(new(true, item.Node)), GooglePath: path + $"[{item.Index}]") { GoogleIsJson = item.Node is JsonObject or JsonArray });
                     }
             }
             return;
         }
-        rows.Add(new(section, title, path, Format(before), Format(local), Format(google)));
+        rows.Add(new(section, title, path, Format(before), Format(local), Format(google)) { BeforeIsJson = before.Node is JsonObject or JsonArray, LocalIsJson = local.Node is JsonObject or JsonArray, GoogleIsJson = google.Node is JsonObject or JsonArray });
     }
 }
