@@ -285,6 +285,18 @@ dotnet-desktop-client: UI поток не получает длительных 
 
 Фактические test invocations использовали `--no-build` после успешной сборки решения: это исключило повторную запись общих bin/obj и не меняло фильтры/набор. Headless запущен с `--treenode-filter '/*/ContactMirror.UiTests.Headless.Tests/MainWindowHeadlessTests/*' --maximum-parallel-tests 1`; нулевого discovery нет. Runtime smoke — временный проект в игнорируемом evidence-каталоге с `BuildProjectReferences=false`. Synthetic Build-Release вызван ровно по §11; Setup не запускался.
 
+### Проверка перед merge на актуальном main
+
+После явного поручения «Влей в мейн» ветка `feat/branding-mirror-icon` перенесена на `origin/main` (`d5585c8`) без конфликтов. Исходный post-EXEC evidence выше относится к базе `d64ed60`; новая проверка учитывает обновлённый интерфейс из main. Ограничение прежнего stop decision на Git delivery снято этим поручением; установка и публикация release по-прежнему не выполняются.
+
+Evidence повторной проверки: `chat-artifacts/icon-merge-validation/`; Synthetic пакет: `artifacts/icon-merge-validation/`, версия `0.3.0-icon.1`. Сборка решения Release прошла с 0 errors / 0 warnings. Core suite: 107/107. MainWindow headless class: 24/24, включая новые сценарии текущего main. Runtime smoke повторно открыл MainWindow и UpdateRecoveryWindow; оба имеют Icon, встроенные 168466 bytes совпадают с ICO по SHA256. Из нового EXE и нового Setup извлечены все 10 кадров: пиксели каждого совпадают с принятым D; оба извлечённых PNG осмотрены. Synthetic manifest содержит `published=false`, `oauthConfigured=false`. Исходные ICO/PNG сохранили прежние SHA256.
+
+Google suite: 147/147. Все обязательные проверки повторно прошли на актуальной базе. Код после успешных проверок не менялся; дополнена только эта spec.
+
+Self-review: diff относительно актуального main содержит только пять файлов подключения, два Assets и эту spec. Новые изменения интерфейса main сохранены. GitHub Actions workflows: 0; CI green не заявляется. Native titlebar evidence выше остаётся проверкой исходной базы; повторная проверка окон на новой базе выполнена headless + Skia. Для статической иконки видео UI flow не применимо, визуальное evidence — PNG ресурсов и предыдущий native titlebar. Никакие временные диагностики, локальные пакеты или screenshots не добавлены в Git.
+
+Перед merge PR #1 удалённый main уже содержал коммит `280fd9b` с подключённой иконкой. Код и Assets этого коммита полностью совпадают с повторно проверенной версией. Ветка перенесена поверх него; конфликт add/add затронул только spec и разрешён сохранением всех существующих записей плюс нового evidence. Итоговый PR добавляет только результаты validation в эту spec; повторные тесты для этого документа не требуются.
+
 ## Approval
 
 Получено «спеку подтверждаю» в текущем чате 2026-10-09. Фаза EXEC; подтверждён описанный локальный scope.
@@ -297,3 +309,5 @@ dotnet-desktop-client: UI поток не получает длительных 
 | EXEC, 2026-10-09 | Получено подтверждение спеки; внесено подключение ресурса | ApplicationIcon, AvaloniaResource, общий загрузчик двух окон и --icon в pack | Проверки обязательного набора | «спеку подтверждаю» | Desktop, Build-Release, Assets |
 | EXEC completion, 2026-10-09 | Все AC закрыты; post-EXEC PASS | Build green, 107 + 147 + 13 tests; два runtime окна; EXE/Setup кадры совпали; native titlebar просмотрен | Завершить локальную задачу | Дополнительного решения не требуется | Assets, исходники подключения, Synthetic пакет, evidence |
 | DELIVERY, 2026-10-09 | Получено «Влей в мейн»; main удалённого репозитория продвинулся до d5585c8 | Иконка проверена на d64ed60; для merge нужны перенос на актуальный main и повторная validation | Рабочая ветка → commit → rebase origin/main → проверки → push/PR/merge | Пользователь явно разрешил merge в main; установка/release не запрошены | Эта spec и тот же связный change set |
+| DELIVERY validation, 2026-10-09 | Rebase без конфликтов; повторная проверка и self-review PASS | Build 0 warnings/errors; 107 + 147 + 24 tests; два runtime окна; 10 кадров EXE/Setup совпадают с D; CI не настроен | Push → PR → merge → чтение фактического состояния PR и origin/main | «Влей в мейн» уже разрешает эти действия | `chat-artifacts/icon-merge-validation/`, локальный Synthetic 0.3.0-icon.1 |
+| DELIVERY reconciliation, 2026-10-09 | main уже содержит `280fd9b`; код и Assets совпадают с проверенной версией | Только новые записи spec отсутствуют в main; add/add conflict разрешён без потери прежней spec | Влить PR #1 с validation evidence → проверить MERGED и commit main | Прежнее поручение merge сохраняет силу | PR #1, Git diff только spec |
