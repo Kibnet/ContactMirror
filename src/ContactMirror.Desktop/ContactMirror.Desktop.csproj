@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>WinExe</OutputType><AssemblyName>ContactMirror</AssemblyName><AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault></PropertyGroup>
   <PropertyGroup><Version Condition="'$(Version)' == ''">0.2.0</Version></PropertyGroup>
+  <PropertyGroup><ApplicationIcon>Assets/contactmirror.ico</ApplicationIcon></PropertyGroup>
+  <ItemGroup><AvaloniaResource Include="Assets/contactmirror.ico" /></ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../ContactMirror.Application/ContactMirror.Application.csproj" />
     <ProjectReference Include="../ContactMirror.Infrastructure/ContactMirror.Infrastructure.csproj" />

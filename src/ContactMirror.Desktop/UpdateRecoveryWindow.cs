@@ -8,6 +8,7 @@ public sealed class UpdateRecoveryWindow : Window
 {
     public UpdateRecoveryWindow()
     {
+        Icon = App.LoadWindowIcon();
         Title = "ContactMirror · установка"; Width = 600; Height = 320; MinWidth = 420; MinHeight = 260;
         var message = new TextBlock { Text = Program.StartupProblem, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
         var recover = new Button { Content = "Проверить восстановление", IsVisible = Program.CanRecoverUpdate, HorizontalAlignment = HorizontalAlignment.Left };

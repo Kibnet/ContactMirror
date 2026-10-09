@@ -1,6 +1,8 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Platform;
 using ContactMirror.Application;
 using ContactMirror.Infrastructure;
 using ContactMirror.Infrastructure.Google;
@@ -13,6 +15,12 @@ public sealed partial class App : Avalonia.Application
 {
     public static Func<MainWindow>? MainWindowFactory { get; set; }
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
+
+    internal static WindowIcon LoadWindowIcon()
+    {
+        using var stream = AssetLoader.Open(new Uri("avares://ContactMirror/Assets/contactmirror.ico"));
+        return new WindowIcon(stream);
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {

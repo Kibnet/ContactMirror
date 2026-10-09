@@ -21,6 +21,7 @@ public sealed partial class MainWindow : Window
     public MainWindow(MainWindowViewModel viewModel)
     {
         InitializeComponent();
+        Icon = App.LoadWindowIcon();
         DataContext = _viewModel = viewModel;
         SizeChanged += (_, _) =>
         {

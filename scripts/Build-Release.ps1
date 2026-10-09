@@ -62,7 +62,7 @@ try {
     $taskPayload = @(Get-ChildItem -LiteralPath $taskStage -Recurse -File)
     $taskForbidden = @($taskPayload | Where-Object { $_.Name -match '(?i)(\.pdb$|\.dpapi$|\.db($|-)|^desktop.*\.json$|\.local\.json$|TestHost|\.Tests\.|UiTests)' -or $_.FullName -match '\\(Credentials|\.contactmirror|TestResults|chat-artifacts)\\' })
     if ($taskForbidden.Count) { throw 'В staging найдены пользовательские данные, test binaries или debug symbols. Pack остановлен.' }
-    Invoke-ReleaseTool @('vpk', 'pack', '--packId', $taskIdentity, '--packVersion', $Version, '--packDir', $taskStage, '--mainExe', 'ContactMirror.exe', '--packTitle', $(if ($ValidationProfile -eq 'Production') { 'ContactMirror' } else { $taskIdentity }), '--runtime', 'win-x64', '--channel', 'win', '--outputDir', $taskOutput, '--shortcuts', 'StartMenuRoot')
+    Invoke-ReleaseTool @('vpk', 'pack', '--packId', $taskIdentity, '--packVersion', $Version, '--packDir', $taskStage, '--mainExe', 'ContactMirror.exe', '--packTitle', $(if ($ValidationProfile -eq 'Production') { 'ContactMirror' } else { $taskIdentity }), '--icon', (Join-Path $taskRoot 'src\ContactMirror.Desktop\Assets\contactmirror.ico'), '--runtime', 'win-x64', '--channel', 'win', '--outputDir', $taskOutput, '--shortcuts', 'StartMenuRoot')
     $taskArchive = Join-Path $taskOutput "versions\$Version"
     New-Item -ItemType Directory -Path $taskArchive -Force | Out-Null
     Get-ChildItem -LiteralPath $taskOutput -File | Where-Object { $_.Name -match 'Setup\.exe$|Portable\.zip$' } | Copy-Item -Destination $taskArchive
