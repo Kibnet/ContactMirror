@@ -157,7 +157,7 @@ public sealed partial class MainWindowHeadlessTests
     {
         PreparePreview(); Page.ClickButton(static p => p.NextConflictButton);
         HeadlessRuntime.Dispatch(() => { Session.Inner.MainWindow.Width = 1000; Session.Inner.MainWindow.Height = 680; });
-        await Task.Delay(180);
+        await LifecycleWait(()=>UxModel().SelectedEntry?.Entry.Key=="vera"&&UxModel().DisplayRows.Count>0,"compact conflict values loaded");
         string left = "", right = ""; double height = 0; bool above = false;
         HeadlessRuntime.Dispatch(() =>
         {
@@ -185,15 +185,16 @@ public sealed partial class MainWindowHeadlessTests
         CaptureCheckpoint("ux-narrow-contact-list");
         HeadlessRuntime.Dispatch(() => UxModel().ShowNarrowDetails = true);
         await Task.Delay(200);
+        CaptureCheckpoint("ux-narrow-contact-details");
         HeadlessRuntime.Dispatch(() =>
         {
             var window = Session.Inner.MainWindow;
             var viewport = window.GetVisualDescendants().OfType<ScrollViewer>().Single(c => AutomationProperties.GetAutomationId(c) == "ContactDetailsScroll");
             var value = window.GetVisualDescendants().OfType<SelectableTextBlock>().First(c => AutomationProperties.GetAutomationId(c) == "DiffRight");
             above = value.TranslatePoint(default, viewport)!.Value.Y >= 0 && value.TranslatePoint(default, viewport)!.Value.Y + value.Bounds.Height <= viewport.Viewport.Height;
+            Console.WriteLine($"Narrow value: point={value.TranslatePoint(default, viewport)}, bounds={value.Bounds}, viewport={viewport.Viewport}, offset={viewport.Offset}, scrollbounds={viewport.Bounds}.");
         });
         await Assert.That(above).IsTrue();
-        CaptureCheckpoint("ux-narrow-contact-details");
         HeadlessRuntime.Dispatch(() => UxModel().BackToListCommand.Execute(null));
         HeadlessRuntime.Dispatch(() => restored = UxModel().ShowList && !UxModel().ShowDetails);
         await Assert.That(restored).IsTrue();
@@ -246,6 +247,7 @@ public sealed partial class MainWindowHeadlessTests
         var coordinator = new TestSyncCoordinator { HistoryComplete = true };
         ConfigureUx(coordinator); PreparePreview();
         Page.ClickButton(static p => p.NextConflictButton);
+        await LifecycleWait(()=>UxModel().DiffRows.Count>0,"technical diff values loaded");
         HeadlessRuntime.Dispatch(() => Session.Inner.MainWindow.GetVisualDescendants().OfType<Expander>().Single(c => AutomationProperties.GetAutomationId(c) == "TechnicalDetails").IsExpanded = true);
         await Task.Delay(150);
         bool exact = false;

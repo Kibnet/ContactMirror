@@ -1,4 +1,5 @@
 using ContactMirror.Application;
+using ContactMirror.Application.Contacts;
 using ContactMirror.Application.Updates;
 using Xunit;
 
@@ -26,7 +27,7 @@ public sealed class UpdateServiceTests
     public async Task ActiveAccountOrWorkspacePreventsRestartWithoutDiscardingPreparedUpdate()
     {
         var backend = new Backend(); var activity = new ApplicationActivity();
-        var service = new ApplicationUpdateService(backend, activity);
+        var service = new ApplicationUpdateService(backend, activity, CleanGuard(activity));
         await service.CheckAsync(); await service.DownloadAsync();
         using (activity.TryEnter()) await service.ApplyAndRestartAsync();
         Assert.Equal(0, backend.Applies);
@@ -56,7 +57,7 @@ public sealed class UpdateServiceTests
         foreach (var ambiguous in new[] { false, true })
         {
             var activity = new ApplicationActivity(); var backend = new Backend { ApplyError = true, HasAmbiguousApply = ambiguous };
-            var service = new ApplicationUpdateService(backend, activity);
+            var service = new ApplicationUpdateService(backend, activity, CleanGuard(activity));
             await service.CheckAsync(); await service.DownloadAsync(); await service.ApplyAndRestartAsync();
             Assert.Equal(ambiguous ? UpdateState.Applying : UpdateState.ReadyToRestart, service.Snapshot.State);
             using var lease = activity.TryEnter();
@@ -80,7 +81,7 @@ public sealed class UpdateServiceTests
     public async Task SlowPackageRevalidationRunsOffCallerAndRetainsExclusiveLease()
     {
         var activity = new ApplicationActivity(); var backend = new Backend { HoldApply = true };
-        var service = new ApplicationUpdateService(backend, activity);
+        var service = new ApplicationUpdateService(backend, activity, CleanGuard(activity));
         await service.CheckAsync(); await service.DownloadAsync();
         var apply = service.ApplyAndRestartAsync();
         await backend.ApplyStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
@@ -106,6 +107,9 @@ public sealed class UpdateServiceTests
             work?.Dispose(); restart?.Dispose();
         }
     }
+    private static DraftRestartGuard CleanGuard(ApplicationActivity activity) => new(activity)
+    { PrepareTransitionAsync = () => Task.FromResult(true) };
+
     private sealed class Backend : IApplicationUpdateBackend
     {
         public bool IsSupported { get; set; } = true;

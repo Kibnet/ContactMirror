@@ -1,6 +1,44 @@
 # Проверки локальной сборки
 
-## Текущий EXEC: UX/UI workspace, 2026-10-08
+## Редактор контактов, 2026-10-09 — итоговая проверка EXEC
+
+Реализация по подтверждённой `specs/2026-10-09-contact-editor.md`: полный локальный каталог, 144 настраиваемых столбца, поиск по всем полям, типизированные AND/OR-фильтры и сортировка по нескольким полям; карточка с 23 категориями и 111 редактируемыми полями, ярлыками, избранным, extensions и фотографией. Все fixtures синтетические.
+
+| Проверка итоговых исходников, Release | Результат | Evidence |
+|---|---|---|
+| Solution build | PASS: 0 предупреждений и ошибок | `chat-artifacts/editor/build-recording-final.log` |
+| Core xUnit | 137/137, 0 skipped | `TestResults/ContactEditor/release-core/core-final.trx` |
+| Google/storage xUnit | 185/185, 0 skipped, включая 38 проверок редактора | `TestResults/ContactEditor/release-google/google-final.trx` |
+| Headless UI | 61/61, 0 skipped, 1m18s861ms | `tests/ContactMirror.UiTests.Headless/bin/Release/net10.0/TestResults/editor-headless-final.trx` |
+| Настоящее окно Windows, FlaUI | 11/11, 0 skipped, 7m25s606ms | `tests/ContactMirror.UiTests.FlaUI/bin/Release/net10.0-windows7.0/TestResults/editor-native-acceptance.trx`; `chat-artifacts/editor/native-acceptance-final.log` |
+| Schema generation/validation | PASS: 23 категории, 25 reachable definitions; 2 examples, 18 negative и 4 positive fixtures | `python schemas/generate_schemas.py --check`; `python schemas/check_schemas.py` |
+| AppAutomation doctor | Strict PASS: 0 ошибок/предупреждений | `AppAutomation.Tooling` 1.9.0, `doctor --repo-root . --strict` |
+
+Итоговые полные suites:137+185+61+11=394 различных теста PASS,0 skipped. После последней правки приложения (header) полные suites пройдены последовательно. Дополнительный изменённый preview-flow также прошёл Headless1/1 (`editor-preview-final.trx`), дубликаты не прибавляются к394. Логи Core/Google/Headless — `chat-artifacts/editor/{core,google,headless}-final.log`; Native — `native-acceptance-final.log`.
+
+Промежуточный native повтор завершил10 сценариев успешно, один не дождался initial check при лимите5s (actual elapsed12.642s); session timeout12m прервал оформление TRX. Следующий video-run дал editor PASS,10/11 overall: ordinary EXE не открыл окно в10s. Для editor readiness/state wait установлен30s, для ordinary window60s/state30s; assertion outcomes не менялись. После Close завершается только собственный запущенный PID перед восстановлением demo preferences. Финальный полный native11/11 подтвердил оба случая. Старый `editor-native-final.trx` не считается evidence этих промежуточных запусков.
+
+Все 111 writable leaf paths изменены через настоящие UI controls, сохранены реальным `ContactEditorStore` и перечитаны; служебный Google-снимок и неизвестные данные сохранены. Проверены source metadata readonly/sourcePrimary writable, partial dates, singleton/duplicate/type rules, ярлыки/избранное, JSON-типы extensions. После фильтрации скрытый черновик остаётся доступным. Свежие VM восстанавливают столбцы, порядок, ширину, AND/OR-фильтры и сортировки; настройки изолированы по папке и demo.
+
+Native CRUD проходит обычный системный выбор файла, отмену, просмотр, выбор teal-фото и замену gold-фото по тому же внешнему пути, сохранение и перечитывание точных байтов, отмену удаления и безопасное перемещение в trash. Отдельный native flow проверяет Ctrl+S, dirty window close, Tab/Escape/Stay, столбцы/фильтры, локальное сохранение без remote write, ручные preview/apply и следующий no-op. Ordinary Desktop `--demo` запускается в временной папке; исходные demo preferences восстановлены по байтам.
+
+Негативные проверки охватывают immutable JSON/photo/binding/labels baseline, coherent SQLite/WAL snapshot с deny-write pins до commit, backup/CAS/fault outcomes, pending/lost/corrupt/mismatched workspace, raw invalid files, watcher failure, прямые modal/restart calls и race между readiness и lease. Изменение выбранного файла/того же photo path при refresh перечитывается; удалённая запись не остаётся старой карточкой. Ошибка удаления сохраняет контакт и честный статус.
+
+Инспектированы все шесть light/dark PNG с длинным аккаунтом/путём при 1180×820, 1000×680 и 820×640: `chat-artifacts/ui/20261009-140216-145/editor-Light-1180x820.png`, `140216-343/editor-Light-1000x680.png`, `140216-668/editor-Light-820x640.png`, `140216-871/editor-Dark-1180x820.png`, `140217-075/editor-Dark-1000x680.png`, `140217-385/editor-Dark-820x640.png` (у сокращённых каталогов тот же префикс `20261009-`). Контраст placeholder: 6.64:1 light и 11.22:1 dark. Narrow comparison: `20261009-140247-226/ux-narrow-contact-details.png`; обе стороны видны полностью. Native photo: `20261009-134938-832/editor-new-rare-fields-photo-native.png`; columns: `20261009-145028-616/editor-native-columns-native.png`; filters: `20261009-145030-064/editor-native-filters-native.png`; dirty close: `20261009-145026-921/editor-native-close-dirty-focus-native.png`; manual sync: `20261009-145043-161/editor-manual-sync-result-native.png`. После последнего замечания header ограничен доступной шириной: folder ellipsis не заходит на навигацию; meaningful bounds assertions проверены в обеих темах при 1000/1180.
+
+Raw problem-file view проверен по отрисованному Headless PNG `chat-artifacts/ui/20261009-134534-443/editor-problem-file-readonly.png` и exact-byte assertions. Это явный fallback к запланированному native issues PNG; настоящий native corrupt-file flow отдельно не заявляется. Native работал при DPI216, отдельная физическая DPI-матрица не выполнялась.
+
+Fixture performance: из 10 000 контактов реализованы 18 строк, UI input 6ms; из 2000 строк черновика — 2, UI ping 6ms; прежний diff — 4 строки и 18ms. Это локальные замеры UI fixtures, а не benchmark реальной пользовательской папки.
+
+Итоговая запись `chat-artifacts/editor/editor-after-20261009-144958-349.mp4`: 120.000s, окно2250×1576, DPI216, logical1000×700. Клиентская версия `chat-artifacts/editor/editor-after-client.mp4`: 64.800s,2216×1488, без чужих окон/desktop edges. Инспектированы кадры20/21 (поиск и выбранная карточка),22 (редактирование/действия фото),23/24 (изменённые имя/телефон и dirty modal),35 (сохранённая и вновь открытая карточка),40 (ручной preview трёх изменений),50 (следующий no-op). Начальные18s показывают ожидание готовности записи; ролик не является benchmark. Native recording target PASS1/1 (`editor-recording-ready.trx`, `chat-artifacts/editor/native-recording-final.log`), не прибавляется к394. После полного11/11 менялся только опциональный test recording hook: unique output, concurrent drain stdout/stderr и bounded60s ожидание первого записанного кадра до UI-действий; приложение осталось неизменным. Прежний40s ролик не достиг preview, предыдущий120s пропустил начало поиска: они исключены из итогового video evidence. Checkpoint manual-preview и record-only pause1.5s перед Apply сохранены. Создание и реальная замена цветного фото отдельно подтверждены native CRUD и exact-byte readback; этот ролик показывает карточку с фото, его просмотр/удаление и локальное сохранение.
+
+Отдельное source/visual review закрыло первоначальные восемь HIGH/MEDIUM findings и последующие замечания по контрасту, узкой панели сравнения и header. Итоговая acceptance-сверка PASS: reviewer лично проверил реальные TRX394/394, дополнительный recording1/1, build0/0, документацию/AC1–12, шесть light/dark размеров, native фото/columns/filters, readonly fallback, финальные video frames и ffprobe64.8s. Domain/UX/Tester/Architect/Delivery-security — все PASS; findings отсутствуют. Depth/NoFindingJustification и stop decision зафиксированы в Post-EXEC SPEC. Reviewer работал без edits/build/tests/mutations, но sandbox danger-full-access/unrestricted/network enabled/approval never: это процедурный advisory/adversarial fallback, технической read-only изоляции нет. Локальный EXEC завершён.
+
+Generated evidence остаётся в ignored `chat-artifacts`. На завершении EXEC настоящие Google-контакты и установленная версия не изменялись; commit/push/release/install не выполнялись.
+
+После перебазирования 11.10.2026 на `origin/main` (`3a93ea9`, изменения иконки) все 53 файла редактора сохранены: 50 совпали по Git-содержимому, в трёх объединены правки редактора и иконки, конфликтов нет. Release solution build PASS,0 предупреждений/ошибок; targeted Headless2/2,0 skipped: ordinary character typing → save/reopen и offline folder transition → create/save. Evidence: `chat-artifacts/editor-rebase-20261011/{verification.json,build.log,headless.log,test-results/rebase-headless.trx}`. Полные394/394 относятся к проверкам до rebase; после rebase весь набор повторно не запускался. 12.10.2026 пользователь отдельно поручил локальный commit; push/release/install не входят в это поручение.
+
+## Предыдущий EXEC: UX/UI workspace, 2026-10-08
 
 Реализована подтверждённая `specs/2026-10-08-ux-workspace.md`: группировка по identity контакта, отдельный выбор полей, значения перед решениями, компактный и узкий режимы, отдельные настройки/история/справка, честные результаты применения, подтверждения удалений, клавиатура и обе темы.
 

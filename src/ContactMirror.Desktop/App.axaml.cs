@@ -57,6 +57,6 @@ public sealed partial class App : Avalonia.Application
                 gateway = new GoogleContactsGateway(google);
             }
         return new MainWindowViewModel(account,
-                new SyncCoordinator(gateway, new FileWorkspaceStore()), Program.IsDemo, activity: Program.Activity, updates: Program.Updates);
+                new SyncCoordinator(gateway, new FileWorkspaceStore()), Program.IsDemo, activity: Program.Activity, updates: Program.Updates, editorStore: new ContactMirror.Infrastructure.Contacts.ContactEditorStore());
     }
 }

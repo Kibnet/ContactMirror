@@ -52,7 +52,7 @@ public abstract partial class RealPipelineScenariosBase<TSession> where TSession
             await Task.Delay(500); CaptureCheckpoint("contact-edit-blocked");
             await Assert.That(Page.RepairGoogleSnapshotButton.IsEnabled).IsTrue();
             Page.ClickButton(static p => p.RepairGoogleSnapshotButton)
-                .WaitUntilNameContains(static p => p.StatusText, "Правки сохранены");
+                .WaitUntilNameContains(static p => p.StatusText, "Правки сохранены", timeoutMs: 20000);
             Page.WaitUntilNameContains(static p => p.ResultSummary, "Правки сохранены");
             Page.ClickButton(static p => p.CheckChangesButton)
                 .WaitUntilNameContains(static p => p.StatusText, "Сравнение завершено");

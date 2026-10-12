@@ -43,7 +43,7 @@ public sealed partial class MainWindowHeadlessTests
         HeadlessRuntime.Dispatch(() => ready = model!.Updates.CanRestart);
         await Assert.That(ready).IsTrue();
         CaptureCheckpoint("update-ready");
-        await service.ApplyAndRestartAsync();
+        await EditorUi(()=>service.ApplyAndRestartAsync());
         var mutations = 0;
         await model!.ConfigureAsync(_ => { mutations++; return Task.CompletedTask; });
         await Assert.That(mutations).IsEqualTo(0);
@@ -269,7 +269,7 @@ public sealed partial class MainWindowHeadlessTests
         {
             try
             {
-                HeadlessRuntime.Dispatch(Inner.MainWindow.Close);
+                HeadlessRuntime.Dispatch(()=>HeadlessEditorCleanup.Close(Inner.MainWindow));
             }
             finally
             {

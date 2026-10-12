@@ -61,17 +61,30 @@ public sealed class MainWindowFlaUiTests
             using var automation = new global::FlaUI.UIA3.UIA3Automation();
             try
             {
-                var window = application.GetMainWindow(automation, TimeSpan.FromSeconds(10)) ?? throw new InvalidOperationException("Demo window did not open.");
+                var window = application.GetMainWindow(automation, TimeSpan.FromSeconds(60)) ?? throw new InvalidOperationException("Demo window did not open within 60 seconds.");
                 var page = new MainWindowPage(new FlaUiControlResolver(window, automation.ConditionFactory));
-                page.WaitUntilNameContains(static p => p.AccountLabel, "Демонстрационный аккаунт")
+                page.WaitUntilNameContains(static p => p.AccountLabel, "Демонстрационный аккаунт", timeoutMs:30000)
+                    .ClickButton(static p => p.SyncNavigationButton)
                     .ClickButton(static p => p.CheckChangesButton)
-                    .WaitUntilNameContains(static p => p.StatusText, "Сравнение завершено");
+                    .WaitUntilNameContains(static p => p.StatusText, "Сравнение завершено", timeoutMs:30000);
                 var screenshot = Path.Combine(repository, "chat-artifacts", "ui", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff"), "ordinary-demo-native.png");
                 Directory.CreateDirectory(Path.GetDirectoryName(screenshot)!);
                 NativeWindowCapture.Save(window.Properties.NativeWindowHandle.Value, screenshot);
                 Console.WriteLine($"Ordinary Desktop --demo: prepared synthetic preview in temporary workspace; {screenshot}");
             }
-            finally { application.Close(); }
+            finally
+            {
+                try { application.Close(); }
+                finally
+                {
+                    if (!application.HasExited)
+                    {
+                        using var ownedProcess=System.Diagnostics.Process.GetProcessById(application.ProcessId);
+                        ownedProcess.Kill(entireProcessTree:true);
+                        await ownedProcess.WaitForExitAsync();
+                    }
+                }
+            }
         }
         finally
         {

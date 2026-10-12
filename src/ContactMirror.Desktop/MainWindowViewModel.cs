@@ -9,6 +9,8 @@ using ContactMirror.Core;
 using ContactMirror.Application.Updates;
 using Avalonia.Threading;
 using Avalonia.Media.Imaging;
+using ContactMirror.Application.Contacts;
+using ContactMirror.Desktop.Contacts;
 
 namespace ContactMirror.Desktop;
 
@@ -25,15 +27,20 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly Action _activityChanged;
     private TaskCompletionSource? _idle;
     private bool _closeRequested;
+    private bool _initialized;
     private CancellationTokenSource? _detailsCancellation;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-    public MainWindowViewModel(IAccountConnector account, ISyncCoordinator sync, bool demo = false, bool persist = true, ApplicationActivity? activity = null, IApplicationUpdateService? updates = null)
+    public MainWindowViewModel(IAccountConnector account, ISyncCoordinator sync, bool demo = false, bool persist = true, ApplicationActivity? activity = null, IApplicationUpdateService? updates = null, IContactEditorStore? editorStore = null)
     {
         _accountConnector = account;
         _sync = sync;
         _persist = persist;
         _activity = activity ?? new();
         Updates = new(updates, _activity);
+        Contacts = new(new ContactEditorService(editorStore ?? new ContactMirror.Infrastructure.Contacts.ContactEditorStore(), _activity), _activity, () => _account, () => { InvalidatePreview(); ShowResult = false; }, demo, persist);
+        updates?.SetRestartGuard(Contacts.Guard);
+        _contactsMode = editorStore is not null;
+        Contacts.PropertyChanged += (_, _) => { RefreshCommands(); NotifyContactsNavigation(); };
         _activityChanged = () => { if (Dispatcher.UIThread.CheckAccess()) RefreshCommands(); else Dispatcher.UIThread.Post(RefreshCommands); };
         _activity.Changed += _activityChanged;
         IsDemo = demo;
@@ -41,7 +48,18 @@ public sealed partial class MainWindowViewModel : ObservableObject
         ConfigurationHint = account.ConfigurationHint;
     }
 
-    [ObservableProperty] private string _folder = "";
+    private string _folder = "";
+    public string Folder
+    {
+        get => _folder;
+        set
+        {
+            if (_folder == value) return;
+            if (Contacts.IsDirty || Contacts.IsBusy || Contacts.HasModal || _activity.IsApplying) { Error = "Закройте диалог, сохраните или отмените правки контакта перед сменой папки."; OnPropertyChanged(); return; }
+            if (SetProperty(ref _folder, value)) { OnFolderChanged(value); FolderInput = value; }
+        }
+    }
+    [ObservableProperty] private string _folderInput = "";
     [ObservableProperty] private string _accountLabel = "Google ещё не подключён";
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private bool _isBusy;
@@ -78,7 +96,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private double _settingsPanelHeight = 170;
     [ObservableProperty] private double _workspaceHeaderHeight = 300;
     public bool IsDemo { get; }
-    public bool CanConfigure => !IsBusy && !_activity.IsActive && !_activity.IsApplying && !_closeRequested && !ShowDeleteConfirmation && !ShowBackupDeleteConfirmation;
+    public bool CanConfigure => !IsBusy && !_activity.IsActive && !_activity.IsApplying && !_closeRequested && !ShowDeleteConfirmation && !ShowBackupDeleteConfirmation && !Contacts.IsBusy && !Contacts.HasModal;
     public bool CanOverrideOAuth => CanConfigure && !ContactMirror.Infrastructure.Configuration.ApplicationPaths.IsValidation && !IsDemo;
     public UpdatesViewModel Updates { get; }
     public bool IsOnboarding => !IsConnected || !FolderReady;
@@ -112,7 +130,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     partial void OnIsConnectedChanged(bool value) { NotifySetup(); RefreshCommands(); }
     partial void OnIsBusyChanged(bool value) => RefreshCommands();
     partial void OnHasPreviewChanged(bool value) { RefreshCommands(); NotifyPlan(); }
-    partial void OnFolderChanged(string value) { ValidateFolder(); InvalidatePreview(); ShowResult = false; NotifySetup(); RefreshCommands(); }
+    private void OnFolderChanged(string value) { ValidateFolder(); InvalidatePreview(); ShowResult = false; NotifySetup(); RefreshCommands(); if (_initialized && ContactsMode && !_activity.IsActive) _ = Contacts.LoadAsync(value); }
     partial void OnShowDeleteConfirmationChanged(bool value) { RefreshCommands(); }
     partial void OnShowBackupDeleteConfirmationChanged(bool value) { RefreshCommands(); }
     partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
@@ -199,6 +217,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public async Task InitializeAsync()
     {
         await RunAsync(ReloadConnectionAsync);
+        _initialized = true;
         _ = Updates.CheckForStartupAsync();
     }
     public async Task ReloadConnectionAsync(CancellationToken token)
@@ -282,22 +301,22 @@ public sealed partial class MainWindowViewModel : ObservableObject
     });
 
     [RelayCommand] private void Cancel() => _cancellation?.Cancel();
-    [RelayCommand(CanExecute = nameof(CanConfigure))] private void ToggleSettings() => ShowSettings = !ShowSettings;
-    [RelayCommand(CanExecute = nameof(CanConfigure))] private void ToggleCapabilities() => ShowCapabilities = !ShowCapabilities;
+    [RelayCommand(CanExecute = nameof(CanConfigure))] private async Task ToggleSettingsAsync() { if (await Contacts.ResolveDraftAsync()) ShowSettings = !ShowSettings; }
+    [RelayCommand(CanExecute = nameof(CanConfigure))] private async Task ToggleCapabilitiesAsync() { if (await Contacts.ResolveDraftAsync()) ShowCapabilities = !ShowCapabilities; }
     [RelayCommand(CanExecute = nameof(CanConfigure))]
     private async Task ToggleHistoryAsync()
     {
+        if (!await Contacts.ResolveDraftAsync()) return;
         ShowHistory = !ShowHistory;
         if (ShowHistory && !string.IsNullOrWhiteSpace(Folder)) await RunAsync(RefreshHistoryAsync);
     }
-    [RelayCommand(CanExecute = nameof(CanCheck))] private async Task NewContactAsync() => await RunAsync(async token =>
+    [RelayCommand(CanExecute = nameof(CanConfigure))] private async Task NewContactAsync()
     {
-        var folder = Folder;
-        var path = await Task.Run(() => _sync.CreateContactFileAsync(folder, token), token);
-        TryOpen(path);
-        InvalidatePreview();
-        Status = "Создан новый файл контакта. Заполните его и проверьте изменения.";
-    });
+        if (!FolderReady || !await Contacts.ResolveDraftAsync()) return;
+        ClosePanel(); ContactsMode = true;
+        await Contacts.LoadAsync(Folder);
+        await Contacts.CreateAsync();
+    }
     [RelayCommand(CanExecute = nameof(CanRestoreBackup))] private async Task RestoreAsync()
     {
         if (_account is null || SelectedRun is null || !CanRestoreBackup) return;
@@ -468,6 +487,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private async Task RunAsync(Func<CancellationToken, Task> action)
     {
         if (!CanConfigure) return;
+        if (!await Contacts.ResolveDraftAsync() || !CanConfigure) return;
         using var activity = _activity.TryEnter();
         if (activity is null) { Error = "Приложение занято перезапуском или другой операцией. Дождитесь её завершения."; return; }
         _idle = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -487,7 +507,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             { ShowSettings = true; Status = "Нужно войти снова. Откройте вход в настройках подключения."; }
             InvalidatePreview();
         }
-        finally { _progressVersion++; _cancellation = null; activity.Dispose(); IsBusy = false; _idle.TrySetResult(); }
+        finally { _progressVersion++; _cancellation = null; activity.Dispose(); IsBusy = false; _idle.TrySetResult(); if (ContactsMode && FolderReady && !_closeRequested) await Contacts.LoadAsync(Folder); }
     }
     public async Task RequestCloseAsync()
     {
@@ -502,6 +522,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         PlannedPhotoPreview?.Dispose();
         _activity.Changed -= _activityChanged;
         Updates.Detach();
+        Contacts.Dispose();
     }
     private void RefreshCommands()
     {

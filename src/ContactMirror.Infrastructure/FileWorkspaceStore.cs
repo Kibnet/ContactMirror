@@ -199,7 +199,7 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
         }
     }
 
-    private static void ValidateControlPaths(string root)
+    internal static void ValidateControlPaths(string root)
     {
         WorkspacePathPolicy.Current.Validate(root);
         foreach (var name in new[] { ".contactmirror", ".contactmirror/workspace.json", ".contactmirror/workspace.lock", ".contactmirror/state.db", ".contactmirror/state.db-wal", ".contactmirror/state.db-shm", ".contactmirror/state.db-journal" }) ValidatePath(root, Path.Combine(root, name));
@@ -225,7 +225,7 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
         }
         return (files, directories);
     }
-    private static async Task<byte[]> ReadBoundedBytesAsync(string root, string path, int maxBytes, CancellationToken token)
+    internal static async Task<byte[]> ReadBoundedBytesAsync(string root, string path, int maxBytes, CancellationToken token)
     {
         ValidatePath(root, path);
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
@@ -235,7 +235,7 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
         if (memory.Length > maxBytes) throw new SyncException("fileTooLarge", "Файл изменился и превышает допустимый размер.");
         return memory.ToArray();
     }
-    private static async Task AtomicNewAsync(string root, string path, byte[] bytes, CancellationToken cancellationToken)
+    internal static async Task AtomicNewAsync(string root, string path, byte[] bytes, CancellationToken cancellationToken)
     {
         var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
         try
@@ -663,70 +663,8 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
             }
             finally { foreach (var guard in photoGuards) await guard.DisposeAsync(); }
         }
-        private async Task ReplaceAsync(string path, byte[] bytes, string? expectedHash, CancellationToken token)
-        {
-            var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
-            var displaced = Path.Combine(Root, ".contactmirror", "recovery", "displaced", Guid.NewGuid().ToString("N") + ".json");
-            var intentPath = displaced + ".intent.json";
-            FileStream? guard = null;
-            try
-            {
-                if (expectedHash is not null)
-                {
-                    ValidatePath(Root, path);
-                    guard = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
-                    if (guard.Length > 16 * 1024 * 1024) throw new SyncException("fileTooLarge", "Локальный файл превышает 16 МБ.");
-                    using var memory = new MemoryStream(); await guard.CopyToAsync(memory, token);
-                    if (JsonSemantics.Hash(memory.ToArray()) != expectedHash) throw new SyncException("localDrift", "Файл изменился во время записи. Новая версия сохранена.");
-                }
-                else if (File.Exists(path)) throw new SyncException("localDrift", "Файл уже существует. Проверьте изменения заново.");
-                ValidatePath(Root, temp);
-                await using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
-                { await stream.WriteAsync(bytes, token); stream.Flush(true); }
-                ValidatePath(Root, path);
-                ValidatePath(Root, temp);
-                token.ThrowIfCancellationRequested();
-                if (expectedHash is null) File.Move(temp, path, overwrite: false);
-                else
-                {
-                    ValidatePath(Root, displaced);
-                    var intent = new JsonObject
-                    {
-                        ["entityId"] = JsonSemantics.ParseObject(bytes, "committed document")["id"]?.DeepClone(),
-                        ["target"] = Path.GetRelativePath(Root, path), ["displacedFile"] = Path.GetFileName(displaced),
-                        ["expectedHash"] = expectedHash, ["committedHash"] = JsonSemantics.Hash(bytes)
-                    };
-                    // The durable intent precedes the replace, so a crash cannot hide a displaced edit.
-                    await AtomicNewAsync(Root, intentPath, JsonSemantics.Serialize(intent), token);
-                    beforeReplace?.Invoke(path);
-                    ValidatePath(Root, path); ValidatePath(Root, temp); ValidatePath(Root, displaced);
-                    File.Replace(temp, path, displaced, ignoreMetadataErrors: false);
-                    afterReplace?.Invoke(path);
-                    guard?.Dispose(); guard = null;
-                    ValidatePath(Root, displaced);
-                    // A competing atomic rename can replace the pathname despite the read guard.
-                    // File.Replace retains the exact file actually displaced; never delete that image.
-                    byte[] before;
-                    await using (var durable = new FileStream(displaced, FileMode.Open, FileAccess.ReadWrite, FileShare.Read, 4096, FileOptions.WriteThrough))
-                    {
-                        if (durable.Length > 16 * 1024 * 1024) throw new SyncException("localDrift", "Фактически вытесненный файл превышает 16 МБ; он сохранён в .contactmirror/recovery/displaced.");
-                        durable.Flush(true);
-                        using var memory = new MemoryStream(); await durable.CopyToAsync(memory, CancellationToken.None); before = memory.ToArray();
-                    }
-                    if (JsonSemantics.Hash(before) != expectedHash)
-                    {
-                        var conflict = (JsonObject)intent.DeepClone();
-                        conflict["actualDisplacedHash"] = JsonSemantics.Hash(before);
-                        await AtomicNewAsync(Root, displaced + ".recovery.json", JsonSemantics.Serialize(conflict), CancellationToken.None);
-                        ValidatePath(Root, intentPath); File.Delete(intentPath);
-                        throw new SyncException("localDrift", "Файл подменён другой программой во время атомарной записи. Обе версии сохранены: фактически вытесненная — в .contactmirror/recovery/displaced. Повторите проверку.");
-                    }
-                    ValidatePath(Root, intentPath); File.Delete(intentPath);
-                }
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { throw new SyncException("fileBusy", "Файл занят или запись запрещена. Исходные и вытесненные версии сохранены; повторите проверку.", inner: ex); }
-            finally { guard?.Dispose(); ValidatePath(Root, temp); if (File.Exists(temp)) File.Delete(temp); }
-        }
+        private Task ReplaceAsync(string path, byte[] bytes, string? expectedHash, CancellationToken token) =>
+            AtomicReplaceAsync(Root, path, bytes, expectedHash, token, beforeReplace, afterReplace);
         public async Task TrashAsync(EntityKind kind, Guid id, string expectedHash, Guid runId, CancellationToken cancellationToken = default)
         {
             var local = await ReadLocalAsync(kind, id, cancellationToken);
@@ -794,6 +732,71 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
             await db.DisposeAsync(); await lease.DisposeAsync();
         }
     }
+
+    internal static async Task AtomicReplaceAsync(string root, string path, byte[] bytes, string? expectedHash, CancellationToken token, Action<string>? beforeReplace = null, Action<string>? afterReplace = null)
+        {
+            var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
+            var displaced = Path.Combine(root, ".contactmirror", "recovery", "displaced", Guid.NewGuid().ToString("N") + ".json");
+            var intentPath = displaced + ".intent.json";
+            FileStream? guard = null;
+            try
+            {
+                if (expectedHash is not null)
+                {
+                    ValidatePath(root, path);
+                    guard = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+                    if (guard.Length > 16 * 1024 * 1024) throw new SyncException("fileTooLarge", "Локальный файл превышает 16 МБ.");
+                    using var memory = new MemoryStream(); await guard.CopyToAsync(memory, token);
+                    if (JsonSemantics.Hash(memory.ToArray()) != expectedHash) throw new SyncException("localDrift", "Файл изменился во время записи. Новая версия сохранена.");
+                }
+                else if (File.Exists(path)) throw new SyncException("localDrift", "Файл уже существует. Проверьте изменения заново.");
+                ValidatePath(root, temp);
+                await using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+                { await stream.WriteAsync(bytes, token); stream.Flush(true); }
+                ValidatePath(root, path);
+                ValidatePath(root, temp);
+                token.ThrowIfCancellationRequested();
+                if (expectedHash is null) File.Move(temp, path, overwrite: false);
+                else
+                {
+                    ValidatePath(root, displaced);
+                    var intent = new JsonObject
+                    {
+                        ["entityId"] = JsonSemantics.ParseObject(bytes, "committed document")["id"]?.DeepClone(),
+                        ["target"] = Path.GetRelativePath(root, path), ["displacedFile"] = Path.GetFileName(displaced),
+                        ["expectedHash"] = expectedHash, ["committedHash"] = JsonSemantics.Hash(bytes)
+                    };
+                    // The durable intent precedes the replace, so a crash cannot hide a displaced edit.
+                    await AtomicNewAsync(root, intentPath, JsonSemantics.Serialize(intent), token);
+                    beforeReplace?.Invoke(path);
+                    ValidatePath(root, path); ValidatePath(root, temp); ValidatePath(root, displaced);
+                    File.Replace(temp, path, displaced, ignoreMetadataErrors: false);
+                    afterReplace?.Invoke(path);
+                    guard?.Dispose(); guard = null;
+                    ValidatePath(root, displaced);
+                    // A competing atomic rename can replace the pathname despite the read guard.
+                    // File.Replace retains the exact file actually displaced; never delete that image.
+                    byte[] before;
+                    await using (var durable = new FileStream(displaced, FileMode.Open, FileAccess.ReadWrite, FileShare.Read, 4096, FileOptions.WriteThrough))
+                    {
+                        if (durable.Length > 16 * 1024 * 1024) throw new SyncException("localDrift", "Фактически вытесненный файл превышает 16 МБ; он сохранён в .contactmirror/recovery/displaced.");
+                        durable.Flush(true);
+                        using var memory = new MemoryStream(); await durable.CopyToAsync(memory, CancellationToken.None); before = memory.ToArray();
+                    }
+                    if (JsonSemantics.Hash(before) != expectedHash)
+                    {
+                        var conflict = (JsonObject)intent.DeepClone();
+                        conflict["actualDisplacedHash"] = JsonSemantics.Hash(before);
+                        await AtomicNewAsync(root, displaced + ".recovery.json", JsonSemantics.Serialize(conflict), CancellationToken.None);
+                        ValidatePath(root, intentPath); File.Delete(intentPath);
+                        throw new SyncException("localDrift", "Файл подменён другой программой во время атомарной записи. Обе версии сохранены: фактически вытесненная — в .contactmirror/recovery/displaced. Повторите проверку.");
+                    }
+                    ValidatePath(root, intentPath); File.Delete(intentPath);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { throw new SyncException("fileBusy", "Файл занят или запись запрещена. Исходные и вытесненные версии сохранены; повторите проверку.", inner: ex); }
+            finally { guard?.Dispose(); ValidatePath(root, temp); if (File.Exists(temp)) File.Delete(temp); }
+        }
 
     public static void ValidateImage(byte[] bytes)
     {

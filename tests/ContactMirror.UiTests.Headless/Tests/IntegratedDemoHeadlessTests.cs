@@ -11,7 +11,7 @@ using TUnit.Core;
 namespace ContactMirror.UiTests.Headless.Tests;
 
 [InheritsTests]
-public sealed class IntegratedDemoHeadlessTests : RealPipelineScenariosBase<IntegratedDemoHeadlessTests.RuntimeSession>
+public sealed partial class IntegratedDemoHeadlessTests : RealPipelineScenariosBase<IntegratedDemoHeadlessTests.RuntimeSession>
 {
     protected override string IntegrationRoot => Session.Directory.FullPath;
     protected override RuntimeSession LaunchSession()
@@ -54,7 +54,7 @@ public sealed class IntegratedDemoHeadlessTests : RealPipelineScenariosBase<Inte
         public TemporaryDirectory Directory { get; } = directory;
         public void Dispose()
         {
-            try { HeadlessRuntime.Dispatch(Inner.MainWindow.Close); }
+            try { HeadlessRuntime.Dispatch(()=>HeadlessEditorCleanup.Close(Inner.MainWindow)); }
             finally { Inner.Dispose(); Directory.Dispose(); }
         }
     }

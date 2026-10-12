@@ -9,6 +9,9 @@
   </Application.Resources>
   <Application.Styles>
     <FluentTheme />
+    <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+    <Style Selector="TextBox:not(:disabled)"><Setter Property="PlaceholderForeground" Value="{DynamicResource SecondaryTextBrush}"/></Style>
+    <Style Selector="TextBox:not(:disabled) /template/ TextBlock#PART_Placeholder"><Setter Property="Opacity" Value="1"/></Style>
     <Style Selector="Button"><Setter Property="Padding" Value="12,8"/><Setter Property="CornerRadius" Value="6"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/><Setter Property="BorderThickness" Value="1"/></Style>
     <Style Selector="Button.primary"><Setter Property="Background" Value="#315DDC"/><Setter Property="Foreground" Value="White"/></Style>
     <Style Selector="Button.quiet"><Setter Property="Padding" Value="6,4"/><Setter Property="BorderThickness" Value="0"/></Style>
