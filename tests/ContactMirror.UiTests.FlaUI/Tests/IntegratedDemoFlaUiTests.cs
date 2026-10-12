@@ -11,7 +11,7 @@ using TUnit.Core;
 namespace ContactMirror.UiTests.FlaUI.Tests;
 
 [InheritsTests]
-public sealed class IntegratedDemoFlaUiTests : RealPipelineScenariosBase<IntegratedDemoFlaUiTests.RuntimeSession>
+public sealed partial class IntegratedDemoFlaUiTests : RealPipelineScenariosBase<IntegratedDemoFlaUiTests.RuntimeSession>
 {
     private System.Diagnostics.Process? _video;
     private bool _compactValidation;

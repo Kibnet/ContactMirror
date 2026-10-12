@@ -1,20 +1,22 @@
-<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:ContactMirror.Desktop"
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:ContactMirror.Desktop" xmlns:conv="using:Avalonia.Data.Converters"
   x:Class="ContactMirror.Desktop.MainWindow" Title="ContactMirror" Width="1180" Height="820" MinWidth="820" MinHeight="640"
   FontSize="14" Background="{DynamicResource WorkspaceBrush}" AutomationProperties.AutomationId="ContactMirrorWindow">
   <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20,16">
-    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
-      <StackPanel Spacing="4">
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="0,0,0,12">
+      <StackPanel x:Name="WindowBrand" Spacing="4" ClipToBounds="True" Margin="0,0,12,0">
         <StackPanel Orientation="Horizontal" Spacing="14">
           <TextBlock Text="ContactMirror" FontSize="23" FontWeight="SemiBold"/>
           <Border IsVisible="{Binding IsDemo}" Classes="badge"><TextBlock Text="ДЕМО · вымышленные данные" FontSize="12"/></Border>
         </StackPanel>
-        <StackPanel Orientation="Horizontal" Spacing="8">
+        <Grid ColumnDefinitions="Auto,Auto,*" ClipToBounds="True">
           <TextBlock Text="{Binding AccountLabel}" Classes="caption" TextWrapping="NoWrap" MaxWidth="220" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AccountLabel}" AutomationProperties.AutomationId="AccountLabel" AutomationProperties.Name="{Binding AccountLabel}"/>
-          <TextBlock Text="·" Classes="caption" IsVisible="{Binding IsConnected}"/>
-          <TextBlock Text="{Binding Folder}" Classes="caption" TextWrapping="NoWrap" MaxWidth="310" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Folder}"/>
-        </StackPanel>
+          <TextBlock Grid.Column="1" Text="·" Classes="caption" IsVisible="{Binding IsConnected}" Margin="8,0"/>
+          <TextBlock Grid.Column="2" Text="{Binding Folder}" Classes="caption" TextWrapping="NoWrap" MaxWidth="310" HorizontalAlignment="Left" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Folder}" AutomationProperties.AutomationId="HeaderFolderLabel"/>
+        </Grid>
       </StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+      <StackPanel x:Name="WindowNavigation" Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Button Content="Контакты" Command="{Binding ShowContactsCommand}" IsEnabled="{Binding CanConfigure}" AutomationProperties.AutomationId="ContactsNavigationButton"/>
+        <Button Content="Синхронизация" Command="{Binding ShowSyncCommand}" IsEnabled="{Binding CanConfigure}" AutomationProperties.AutomationId="SyncNavigationButton"/>
         <Button Content="История" Command="{Binding ToggleHistoryCommand}" AutomationProperties.AutomationId="HistoryButton"/>
         <Button Content="Настройки" Command="{Binding ToggleSettingsCommand}" AutomationProperties.AutomationId="SettingsButton"/>
         <Button Content="Справка" Command="{Binding ToggleCapabilitiesCommand}" AutomationProperties.AutomationId="CapabilitiesButton"/>
@@ -25,7 +27,7 @@
       <Expander Header="Сообщения проверки" IsVisible="{Binding HasNotices}"><TextBlock Text="{Binding Notice}" TextWrapping="Wrap"/></Expander>
     </StackPanel>
     <Grid Grid.Row="2">
-      <Grid IsEnabled="{Binding !ShowDeleteConfirmation}" IsVisible="{Binding !HasPanel}">
+      <Grid IsEnabled="{Binding !ShowDeleteConfirmation}" IsVisible="{Binding ShowSyncPage}">
         <ScrollViewer IsVisible="{Binding IsOnboarding}">
           <StackPanel MaxWidth="720" HorizontalAlignment="Center" Spacing="16" Margin="20,28">
             <TextBlock Text="Контакты в Google и в твоей папке" FontSize="28" FontWeight="SemiBold" TextWrapping="Wrap"/>
@@ -39,7 +41,7 @@
             </StackPanel></Border>
             <Border Classes="card"><StackPanel Spacing="10">
               <TextBlock Text="2. Выбрать папку" FontSize="20" FontWeight="SemiBold"/>
-              <Grid ColumnDefinitions="*,Auto"><TextBox Text="{Binding Folder}" IsEnabled="{Binding CanConfigure}" PlaceholderText="Папка для файлов контактов" AutomationProperties.AutomationId="FolderInput"/><Button Grid.Column="1" Content="Выбрать папку…" Click="ChooseFolder" IsEnabled="{Binding CanConfigure}" Margin="8,0,0,0" AutomationProperties.AutomationId="ChooseFolderButton"/></Grid>
+              <Grid ColumnDefinitions="*,Auto"><TextBox Text="{Binding FolderInput}" LostFocus="FolderInputLostFocus" IsEnabled="{Binding CanConfigure}" PlaceholderText="Папка для файлов контактов" AutomationProperties.AutomationId="FolderInput"/><Button Grid.Column="1" Content="Выбрать папку…" Click="ChooseFolder" IsEnabled="{Binding CanConfigure}" Margin="8,0,0,0" AutomationProperties.AutomationId="ChooseFolderButton"/></Grid>
               <TextBlock Text="Один JSON-файл на контакт, фотографии рядом. Здесь же будут резервные копии." Classes="caption"/>
               <TextBlock Text="{Binding FolderValidation}" Classes="caption" TextWrapping="Wrap" AutomationProperties.AutomationId="FolderValidation"/>
             </StackPanel></Border>
@@ -50,7 +52,7 @@
             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
               <TextBlock Text="{Binding LastRun}" Classes="caption" FontSize="12" MaxWidth="270" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
               <Button Content="Открыть папку" Command="{Binding OpenFolderCommand}" Classes="quiet"/>
-              <Button Content="Новый файл" Command="{Binding NewContactCommand}" Classes="quiet" AutomationProperties.AutomationId="NewContactButton"/>
+              <Button Content="Новый контакт" Command="{Binding NewContactCommand}" Classes="quiet" AutomationProperties.AutomationId="NewContactButton"/>
             </StackPanel>
             <Button Grid.Column="1" Content="Проверить изменения" Command="{Binding CheckCommand}" Classes.primary="{Binding !HasPreview}" AutomationProperties.AutomationId="CheckChangesButton"/>
           </Grid>
@@ -106,7 +108,7 @@
                       <Grid IsVisible="{Binding HasSelectedEntry}" RowDefinitions="*,Auto">
                         <ScrollViewer AutomationProperties.AutomationId="ContactDetailsScroll" VerticalScrollBarVisibility="Auto">
                           <StackPanel Spacing="10">
-                            <StackPanel Spacing="4"><TextBlock Text="{Binding SelectedEntry.Entry.Explanation}" Classes="caption" TextWrapping="Wrap"/><TextBlock Text="{Binding DiffSummary}" Classes="caption" FontSize="12" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="DiffSummary" AutomationProperties.Name="{Binding DiffSummary}"/></StackPanel>
+                            <StackPanel Spacing="4"><TextBlock Text="{Binding SelectedEntry.Entry.Explanation}" IsVisible="{Binding SelectedEntry.Entry.Explanation, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Classes="caption" TextWrapping="Wrap"/><TextBlock Text="{Binding DiffSummary}" Classes="caption" FontSize="12" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="DiffSummary" AutomationProperties.Name="{Binding DiffSummary}"/></StackPanel>
                             <StackPanel IsVisible="{Binding HasPhotoComparison}" Spacing="6" AutomationProperties.AutomationId="PhotoComparison">
                               <TextBlock Text="Фотография" FontWeight="SemiBold"/>
                               <TextBlock Text="{Binding PhotoStatus}" TextWrapping="Wrap"/>
@@ -185,6 +187,7 @@
           </Grid>
         </Grid>
       </Grid>
+      <ContentControl x:Name="ContactsHost" IsVisible="{Binding ShowContactsPage}"/>
       <Border IsVisible="{Binding HasPanel}" Classes="card">
         <Grid RowDefinitions="Auto,*">
           <Button Content="← Вернуться к изменениям" Command="{Binding ClosePanelCommand}" HorizontalAlignment="Left" Classes="quiet" AutomationProperties.AutomationId="ClosePanelButton" Margin="0,0,0,14"/>

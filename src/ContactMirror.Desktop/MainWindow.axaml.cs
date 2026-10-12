@@ -23,6 +23,8 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         Icon = App.LoadWindowIcon();
         DataContext = _viewModel = viewModel;
+        this.FindControl<ContentControl>("ContactsHost")!.Content = new ContactMirror.Desktop.Contacts.ContactsView(viewModel.Contacts)
+        { RefreshCatalog = () => viewModel.Contacts.LoadAsync(viewModel.Folder) };
         SizeChanged += (_, _) =>
         {
             if (DataContext is not MainWindowViewModel current) return;
@@ -45,17 +47,29 @@ public sealed partial class MainWindow : Window
         };
         AddHandler(KeyDownEvent, HandleWorkspaceKey, RoutingStrategies.Tunnel);
         Opened += async (_, _) => await viewModel.InitializeAsync();
+        var closeAccepted = false;
+        var closePending = false;
         Closing += async (_, args) =>
         {
-            if (!viewModel.IsBusy) return;
-            args.Cancel = true; IsEnabled = false;
+            if (closeAccepted) return;
+            args.Cancel = true;
+            if (closePending || viewModel.Contacts.HasModal) return;
+            closePending = true;
+            if (!await viewModel.Contacts.ResolveDraftAsync()) { closePending = false; return; }
+            IsEnabled = false;
             await viewModel.RequestCloseAsync();
+            closeAccepted = true;
             Close();
         };
         Closed += (_, _) => { viewModel.CancelCommand.Execute(null); viewModel.Detach(); };
     }
     private void UpdateComparisonLayout(MainWindowViewModel model)
     {
+        var brand=this.FindControl<StackPanel>("WindowBrand")!;
+        var navigation=this.FindControl<StackPanel>("WindowNavigation")!;
+        Grid.SetColumnSpan(brand,model.IsNarrow?2:1);
+        Grid.SetRow(navigation,model.IsNarrow?1:0);Grid.SetColumn(navigation,model.IsNarrow?0:1);Grid.SetColumnSpan(navigation,model.IsNarrow?2:1);
+        navigation.HorizontalAlignment=Avalonia.Layout.HorizontalAlignment.Right;navigation.Margin=model.IsNarrow?new Thickness(0,10,0,0):default;
         var grid = this.FindControl<Grid>("ComparisonGrid")!;
         if (model.IsNarrow) grid.ColumnDefinitions = new ColumnDefinitions(model.ShowNarrowDetails ? "0,0,*" : "*,0,0");
         else if (grid.ColumnDefinitions[1].Width.Value == 0) grid.ColumnDefinitions = new ColumnDefinitions("0.32*,10,0.68*");
@@ -63,6 +77,7 @@ public sealed partial class MainWindow : Window
     private void FocusById(string id) => this.GetVisualDescendants().OfType<Control>().FirstOrDefault(c => AutomationProperties.GetAutomationId(c) == id)?.Focus();
     private void HandleWorkspaceKey(object? sender, KeyEventArgs args)
     {
+        if (_viewModel.ShowContactsPage) return;
         if (args.Key == Key.Escape)
         {
             if (_viewModel.ShowDeleteConfirmation) _viewModel.DismissDeletesCommand.Execute(null);
@@ -81,6 +96,7 @@ public sealed partial class MainWindow : Window
             args.Handled = true;
         }
     }
+    private async void FolderInputLostFocus(object? sender, RoutedEventArgs args) => await _viewModel.CommitFolderInputAsync();
     private async void ChooseFolder(object? sender, RoutedEventArgs args) => await _viewModel.ConfigureAsync(async token =>
     {
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Папка контактов ContactMirror", AllowMultiple = false });

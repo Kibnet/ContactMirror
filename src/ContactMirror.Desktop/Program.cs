@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using ContactMirror.Application;
 using ContactMirror.Application.Updates;
+using ContactMirror.Application.Contacts;
 using ContactMirror.Infrastructure.Configuration;
 using ContactMirror.Infrastructure.Updates;
 using Velopack;
@@ -63,7 +64,7 @@ public static class Program
                     }
                 }
             }
-            if (string.IsNullOrEmpty(StartupProblem)) Updates = new ApplicationUpdateService(new VelopackUpdateBackend(UpdateSourceOptions.Load(), owner, IsDemo), Activity);
+            if (string.IsNullOrEmpty(StartupProblem)) Updates = new ApplicationUpdateService(new VelopackUpdateBackend(UpdateSourceOptions.Load(), owner, IsDemo), Activity, new DraftRestartGuard(Activity));
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException)
         { StartupProblem = "Не удалось проверить состояние установки. Вход Google и синхронизация не запущены. Повторите установку ContactMirror."; }

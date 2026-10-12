@@ -20,10 +20,19 @@ public interface IApplicationUpdateService
     Task DownloadAsync();
     void Cancel();
     Task ApplyAndRestartAsync();
+    void SetRestartGuard(IUpdateRestartGuard guard) { }
 }
 
-public sealed class ApplicationUpdateService(IApplicationUpdateBackend backend, ApplicationActivity activity) : IApplicationUpdateService
+public interface IUpdateRestartGuard
 {
+    Task<long?> PrepareAsync();
+    IDisposable? TryAuthorize(long expectedGeneration);
+}
+
+public sealed class ApplicationUpdateService(IApplicationUpdateBackend backend, ApplicationActivity activity, IUpdateRestartGuard? initialRestartGuard = null) : IApplicationUpdateService
+{
+    private IUpdateRestartGuard? restartGuard = initialRestartGuard;
+    public void SetRestartGuard(IUpdateRestartGuard guard) { lock (gate) restartGuard = guard; }
     private readonly object gate = new();
     private Task? pending;
     private CancellationTokenSource? cancellation;
@@ -70,14 +79,25 @@ public sealed class ApplicationUpdateService(IApplicationUpdateBackend backend, 
 
     public async Task ApplyAndRestartAsync()
     {
+        IUpdateRestartGuard? guard;
         lock (gate)
         {
             if (snapshot.State != UpdateState.ReadyToRestart || pending is { IsCompleted: false }) return;
+            guard = restartGuard;
         }
+        if (guard is null) { Publish(Snapshot with { Error = "Редактор ещё не готов к безопасному перезапуску. Повторите после загрузки окна." }); return; }
+        var stamp = await guard.PrepareAsync();
+        if (stamp is null) { Publish(Snapshot with { Error = "Сохраните или отмените правки контакта перед перезапуском." }); return; }
         var lease = activity.TryEnter(restart: true);
         if (lease is null) { Publish(Snapshot with { Error = "Завершите синхронизацию или вход Google перед перезапуском." }); return; }
         try
         {
+            using var authorization = guard?.TryAuthorize(stamp.Value);
+            lock (gate)
+            {
+                if (snapshot.State != UpdateState.ReadyToRestart || !ReferenceEquals(guard, restartGuard) || guard is not null && authorization is null)
+                { lease.Dispose(); return; }
+            }
             Publish(Snapshot with { State = UpdateState.Applying, Error = null });
             await Task.Run(backend.ApplyAndRestart);
             // A successful SDK apply exits this process. A returning backend cannot prove completion.

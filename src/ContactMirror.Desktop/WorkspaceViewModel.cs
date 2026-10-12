@@ -69,7 +69,7 @@ public sealed partial class MainWindowViewModel
         if (!_syncingSelectedEntry && (SelectedEntry is null || !FieldEntries.Contains(SelectedEntry))) SelectedEntry = FieldEntries.FirstOrDefault();
         if (value is not null && IsNarrow) ShowNarrowDetails = true;
     }
-    private void NotifyPanel() => OnPropertyChanged(nameof(HasPanel));
+    private void NotifyPanel() { OnPropertyChanged(nameof(HasPanel)); NotifyContactsNavigation(); }
     private void NotifyLayout() { OnPropertyChanged(nameof(ShowList)); OnPropertyChanged(nameof(ShowDetails)); OnPropertyChanged(nameof(ShowPlanTools)); }
     private void ValidateFolder()
     {
@@ -84,7 +84,7 @@ public sealed partial class MainWindowViewModel
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or SyncException)
         { FolderValidation = error.Message; }
     }
-    private void NotifySetup() { OnPropertyChanged(nameof(IsOnboarding)); OnPropertyChanged(nameof(IsWorkspace)); OnPropertyChanged(nameof(ShowPlan)); }
+    private void NotifySetup() { OnPropertyChanged(nameof(IsOnboarding)); OnPropertyChanged(nameof(IsWorkspace)); OnPropertyChanged(nameof(ShowPlan)); NotifyContactsNavigation(); }
     private void NotifyDetails()
     {
         foreach (var name in new[] { nameof(CanChooseLocal), nameof(CanChooseGoogle), nameof(LocalChoiceCaption), nameof(GoogleChoiceCaption), nameof(LeftColumnTitle), nameof(RightColumnTitle), nameof(PlannedOutcome) }) OnPropertyChanged(name);
