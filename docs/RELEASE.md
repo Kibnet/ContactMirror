@@ -17,7 +17,7 @@
 Для Production нужен Desktop OAuth JSON. Выбран источник GitHub Releases `Kibnet/ContactMirror`:
 
 ```powershell
-pwsh -NoProfile -File scripts/Build-Release.ps1 -Version 0.3.0 -ValidationProfile Production -OAuthClientPath appsettings/oauth-client.local.json -UpdateSourceKind github -UpdateSource https://github.com/Kibnet/ContactMirror -Output artifacts/releases/Production-0.3.0
+pwsh -NoProfile -File scripts/Build-Release.ps1 -Version 0.4.0 -ValidationProfile Production -OAuthClientPath appsettings/oauth-client.local.json -UpdateSourceKind github -UpdateSource https://github.com/Kibnet/ContactMirror -Output artifacts/releases/Production-0.4.0
 ```
 
 Локальный каталог feed разрешён только для изолированных проверочных профилей:
@@ -31,7 +31,7 @@ pwsh -NoProfile -File scripts/Build-Release.ps1 -Version 0.2.4 -ValidationProfil
 
 ## Установленный сценарий
 
-Актуальный Setup в release устанавливает опубликованную версию. Уже установленная Production0.2.6 использует тот же GitHub источник и может получить полный пакет0.3.0 без промежуточных версий. Откройте настройки, проверьте обновления, нажмите «Скачать», затем «Установить и перезапустить». Во время синхронизации перезапуск недоступен. Настройки, vault и папка контактов находятся вне установки.
+Актуальный Setup в release устанавливает опубликованную версию. Уже установленные Production0.2.6 и0.3.0 используют тот же GitHub источник и могут получить полный пакет0.4.0 без промежуточных версий. Откройте настройки, проверьте обновления, нажмите «Скачать», затем «Установить и перезапустить». Во время синхронизации перезапуск недоступен. Настройки, vault и папка контактов находятся вне установки.
 
 Проверяются App ID, версия, канал `win`, RID `win-x64`, содержимое nuspec, размер и SHA256 полного пакета. Если delta-реконструкция не совпадает с SHA256 исходного full ZIP, приложение один раз скачивает исходный full пакет и повторяет проверку. Проверка не ослабляется для delta.
 
@@ -46,9 +46,17 @@ Production-сборка использует публичный GitHub Releases 
 Проверить пакет и получить план публикации без записи в GitHub:
 
 ```powershell
-pwsh -NoProfile -File scripts/Publish-Release.ps1 -Repository Kibnet/ContactMirror -Version 0.3.0 -Output artifacts/releases/Production-0.3.0 -Target <commit-sha>
+pwsh -NoProfile -File scripts/Publish-Release.ps1 -Repository Kibnet/ContactMirror -Version 0.4.0 -Output artifacts/releases/Production-0.4.0 -Target <commit-sha>
 ```
 
-Скрипт сверяет профиль, OAuth-конфигурацию, GitHub URL и SHA256 всех файлов feed, Setup и portable. Он подготавливает стандартные русские release notes и `SHA256SUMS.txt`; перед публикацией описание сверяют с `CHANGELOG.md` и фактическим diff. Для публикации требуется отдельное разрешение пользователя, вход через GitHub CLI и проверенный commit в репозитории. Опция `-Publish` создаёт публичный release через `gh release create`; при собственном описании передайте проверенный файл через `--notes-file`. Существующие версии не заменяются.
+Скрипт сверяет профиль, OAuth-конфигурацию, GitHub URL и SHA256 всех файлов feed, Setup и portable. Он подготавливает стандартные русские release notes и `SHA256SUMS.txt`; перед публикацией описание сверяют с `CHANGELOG.md` и фактическим diff. Для публикации требуется отдельное разрешение пользователя, вход через GitHub CLI и проверенный commit в репозитории. Опция `-Publish` публикует именно стандартные notes скрипта; параметра для другого файла notes у него нет. Существующие версии не заменяются.
+
+Для0.4.0 сначала выполните скрипт **без `-Publish`**, проверьте возвращённый список файлов и затем опубликуйте подготовленное описание отдельно. `--target` должен содержать точный SHA уже слитого main; эти пять assets должны совпадать с проверенным планом:
+
+```powershell
+gh release create v0.4.0 --repo Kibnet/ContactMirror --target <merged-commit-sha> --title "ContactMirror 0.4.0" --notes-file docs/releases/0.4.0.md artifacts/releases/Production-0.4.0/ContactMirror.Desktop-0.4.0-full.nupkg artifacts/releases/Production-0.4.0/ContactMirror.Desktop-win-Setup.exe artifacts/releases/Production-0.4.0/ContactMirror.Desktop-win-Portable.zip artifacts/releases/Production-0.4.0/releases.win.json artifacts/releases/Production-0.4.0/SHA256SUMS.txt
+```
+
+App updater запрещает downgrade. Revert исходников или сохранение старых assets не откатывает уже установленную0.4.0 автоматически: исправление доставляется новой версией0.4.1, а возврат на0.3.0 требует отдельной ручной переустановки. Папка контактов, настройки и vault остаются вне установки.
 
 В release попадают только nupkg, Setup, portable, feed и контрольные суммы. Build manifest с локальными путями, исходный OAuth JSON, vault и контакты пользователя не загружаются отдельно. Desktop OAuth client входит в программу; режим Google Testing сохраняется и после публикации.
