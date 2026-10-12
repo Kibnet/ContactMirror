@@ -6,6 +6,7 @@ namespace ContactMirror.UiTests.Authoring.Pages;
 [UiControl("SyncNavigationButton",UiControlType.Button,"SyncNavigationButton")]
 [UiControl("ContactsSearch",UiControlType.TextBox,"ContactsSearch")]
 [UiControl("ContactsStatus",UiControlType.Label,"ContactsStatus")]
+[UiControl("ContactsCount",UiControlType.Label,"ContactsCount")]
 [UiControl("ContactsError",UiControlType.Label,"ContactsError")]
 [UiControl("ContactOpenButton",UiControlType.Button,"ContactOpenButton")]
 [UiControl("ContactEditButton",UiControlType.Button,"ContactEditButton")]

@@ -16,13 +16,15 @@ internal static class NativeWindowCapture
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
     public static void Maximize(IntPtr window) => ShowWindow(window, 3);
     public static void Compact(IntPtr window)
+        => Resize(window,1000,700);
+    public static void Resize(IntPtr window,int logicalWidth,int logicalHeight)
     {
         var previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
         try
         {
             ShowWindow(window, 9);
             var scale = GetDpiForWindow(window) / 96d;
-            SetWindowPos(window, IntPtr.Zero, 100, 100, (int)(1000 * scale), (int)(700 * scale), 0x14);
+            SetWindowPos(window, IntPtr.Zero, 100, 100, (int)(logicalWidth * scale), (int)(logicalHeight * scale), 0x14);
         }
         finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
         Thread.Sleep(350); // The test app has a separate UI thread; wait for its resize/render checkpoint.

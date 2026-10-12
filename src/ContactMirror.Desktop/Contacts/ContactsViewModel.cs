@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Collections.ObjectModel;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -14,8 +15,27 @@ public sealed class ContactRowViewModel(ContactCatalogItem item, IReadOnlyDictio
     public Guid Id => item.Id;
     public string Name => ContactTableQuery.DisplayName(item.Document);
     public ContactCatalogItem Item => item;
-    public string Cell(string column) => ContactTableQuery.FormatValues(item.Document, column, labels);
+    public string Cell(string column) => ContactValuePresenter.FormatColumn(item.Document, column, labels);
 }
+
+public sealed class EditorPopupContext
+{
+    internal EditorPopupContext(ContactsViewModel owner, JsonObject document, ContactSnapshot snapshot, long generation, string path, bool editing)
+    { Owner = owner; Document = document; Root = snapshot.Root; ContactId = snapshot.Id; ContactPath = snapshot.Path; WorkspaceId = snapshot.WorkspaceId; Generation = generation; Path = path; Editing = editing; }
+    internal ContactsViewModel Owner { get; }
+    internal JsonObject Document { get; }
+    internal string Root { get; }
+    internal Guid ContactId { get; }
+    internal Guid WorkspaceId { get; }
+    internal string ContactPath { get; }
+    internal bool Editing { get; }
+    internal bool Retired { get; set; }
+    public long Generation { get; }
+    public string Path { get; }
+}
+
+public sealed record EditorInvalidInput(string Value, string Error);
+public sealed record EditorPopupInputChange(string? ClearPrefix = null, IReadOnlyDictionary<string,EditorInvalidInput>? Invalid = null);
 
 public sealed partial class ContactsViewModel : ObservableObject, IDisposable
 {
@@ -36,8 +56,11 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     private volatile bool writing;
     private int externalWriteEvent;
     private int fileChangeVersion;
+    private int selectedFileChange;
+    private EditorPopupContext? editorPopup;
     internal Action? BeforeWatch {get;set;}
     private readonly Dictionary<string,string> validationErrors = new();
+    private readonly Dictionary<string,string> invalidInputs = new();
     private int photoVersion;
     public DraftRestartGuard Guard { get; }
     public ContactTableConfiguration Configuration { get; private set; } = ContactTableConfiguration.Default;
@@ -48,8 +71,12 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     public IReadOnlyDictionary<Guid, string> Labels => catalog?.Labels ?? new Dictionary<Guid, string>();
     public bool IsDirty => Guard.IsDirty;
     public bool IsActivityBusy => activity.IsActive || activity.IsApplying;
-    public bool HasModal => ShowDecision || ShowDelete || ShowPhoto || ShowConfiguration || IsPickingPhoto;
+    public bool HasModal => editorPopup is not null || HasForeignModal;
+    public bool HasEditorPopup => editorPopup is not null;
+    private bool HasForeignModal => ShowDecision || ShowDelete || ShowPhoto || ShowConfiguration || IsPickingPhoto;
     public bool HasContact => original is not null;
+    public bool IsNewContact => original?.IsNew == true;
+    public IReadOnlyDictionary<string,string> ValidationErrors { get; }
     public bool CanEdit => catalog is not null && HasContact && original?.ReadOnlyReason is null && catalog.ReadOnlyReason is null && !IsBusy && !IsActivityBusy && !HasModal;
     public bool CanCreate => catalog is not null && catalog.ReadOnlyReason is null && !IsBusy && !IsActivityBusy && !HasModal;
     public string Name => document is null ? "Выберите контакт" : ContactTableQuery.DisplayName(document);
@@ -75,6 +102,7 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool showPhoto;
     [ObservableProperty] private bool showConfiguration;
     [ObservableProperty] private bool isPickingPhoto;
+    [ObservableProperty] private bool hasExternalDrift;
     [ObservableProperty] private string error = "";
     [ObservableProperty] private string status = "Сохраняем в папку. Отправка в Google — через проверку изменений.";
     [ObservableProperty] private string search = "";
@@ -83,12 +111,16 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     public event Action? StructureChanged;
     public event Action? FieldVisibilityChanged;
     public event Action? TableChanged;
+    public event Action<string>? ErrorFocusRequested;
+    public void RefreshStructure() => StructureChanged?.Invoke();
 
     public ContactsViewModel(ContactEditorService service, ApplicationActivity activity, Func<AccountIdentity?> account,
         Action onSaved, bool demo = false, bool persist = true, ContactTablePreferences? preferenceStore = null)
     {
         this.service = service; this.activity = activity; this.account = account; this.onSaved = onSaved;
         preferences = preferenceStore ?? new(demo, persist); Guard = new(activity);
+        ValidationErrors = new ReadOnlyDictionary<string,string>(validationErrors);
+        Guard.IsTransitionBlocked = () => disposed || HasModal || IsBusy;
         Guard.PrepareTransitionAsync = () => OnUi(ResolveDraftAsync);
         Guard.Changed += Notify;
         activity.Changed += ActivityChanged;
@@ -96,7 +128,13 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
         {
             var version=Volatile.Read(ref fileChangeVersion);
             Dispatcher.UIThread.Post(() =>
-            { if (!disposed&&!writing&&version==Volatile.Read(ref fileChangeVersion)) Status = "Файлы могли измениться вне приложения. Обновите список; черновик сохранён."; });
+            {
+                if (!disposed&&!writing&&version==Volatile.Read(ref fileChangeVersion))
+                {
+                    if (Interlocked.Exchange(ref selectedFileChange,0) != 0) HasExternalDrift = true;
+                    Status = HasExternalDrift ? "Файл изменился вне редактора. Загрузите актуальную версию или оставьте черновик." : "Файлы могли измениться вне приложения. Обновите список; черновик сохранён.";
+                }
+            });
         };
     }
     private static async Task<bool> OnUi(Func<Task<bool>> action) => await Dispatcher.UIThread.InvokeAsync(action);
@@ -112,13 +150,13 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     partial void OnShowAllFieldsChanged(bool value) => FieldVisibilityChanged?.Invoke();
     private void Notify()
     {
-        foreach (var property in new[] { nameof(IsDirty), nameof(IsActivityBusy), nameof(HasModal), nameof(HasContact), nameof(CanEdit), nameof(CanCreate), nameof(Name), nameof(CountCaption), nameof(IssuesCaption), nameof(Issues), nameof(ReadOnlyReason), nameof(HiddenSelection), nameof(Starred) }) OnPropertyChanged(property);
+        foreach (var property in new[] { nameof(IsDirty), nameof(IsActivityBusy), nameof(HasModal), nameof(HasEditorPopup), nameof(HasContact), nameof(IsNewContact), nameof(CanEdit), nameof(CanCreate), nameof(Name), nameof(CountCaption), nameof(IssuesCaption), nameof(Issues), nameof(ReadOnlyReason), nameof(HiddenSelection), nameof(Starred), nameof(ValidationErrors) }) OnPropertyChanged(property);
     }
     public async Task LoadAsync(string root, bool reloadSelected = true)
     {
         var changingRoot = catalog is not null && (string.IsNullOrWhiteSpace(root) || !Path.GetFullPath(root).Equals(catalog.Root, StringComparison.OrdinalIgnoreCase));
         if (changingRoot && (IsDirty || HasModal || IsActivityBusy)) { Error = "Закройте диалог, сохраните или отмените изменения перед сменой папки."; return; }
-        if (changingRoot && !Guard.Reset(change: () => { original = null; document = null; photoEdit = new(); })) return;
+        if (changingRoot && !Guard.Reset(change: () => { original = null; document = null; photoEdit = new(); ClearDraftUi(); })) return;
         if (changingRoot) { PhotoPreview?.Dispose(); PhotoPreview = null; IsEditing = false; StructureChanged?.Invoke(); }
         loading?.Cancel(); loading?.Dispose(); loading = new(); var token = loading.Token;
         if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root)) { catalog = null; Rows = []; IsBusy = false; Notify(); TableChanged?.Invoke(); return; }
@@ -144,7 +182,7 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
                     token.ThrowIfCancellationRequested();
                     if(ReferenceEquals(original,selected)&&!IsDirty&&!HasModal)SetSnapshot(fresh);
                 }
-                else if(Guard.Reset(change:()=>{original=null;document=null;photoEdit=new();}))
+                else if(Guard.Reset(change:()=>{original=null;document=null;photoEdit=new();ClearDraftUi();}))
                 {IsEditing=false;PhotoPreview?.Dispose();PhotoPreview=null;Notify();StructureChanged?.Invoke();}
             }
         }
@@ -166,6 +204,8 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
             if(!args.FullPath.Equals(original?.Path,StringComparison.OrdinalIgnoreCase))Interlocked.Exchange(ref externalWriteEvent,1);
             return;
         }
+        if (args.FullPath.Equals(original?.Path,StringComparison.OrdinalIgnoreCase)
+            || args is RenamedEventArgs renamed && renamed.OldFullPath.Equals(original?.Path,StringComparison.OrdinalIgnoreCase)) Interlocked.Exchange(ref selectedFileChange,1);
         try { changedTimer.Stop(); changedTimer.Start(); } catch (ObjectDisposedException) { }
     }
     public async Task QueryAsync()
@@ -211,6 +251,140 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
         if (!CanEdit) return;
         IsEditing = true; StructureChanged?.Invoke();
     }
+    public EditorPopupContext? BeginEditorPopup(string path = "")
+    {
+        if (disposed || original is null || document is null || catalog is null || IsBusy || HasModal || IsActivityBusy) return null;
+        var generation = Guard.Generation;
+        EditorPopupContext? context = null;
+        if (!Guard.TryMutateChecked(generation,
+            () => !disposed && original is not null && document is not null && catalog is not null && !IsBusy && !HasModal,
+            () => { editorPopup = context = new(this, document!, original!, generation + 1, path, IsEditing); return false; })) return null;
+        Notify(); return context;
+    }
+    public bool EndEditorPopup(EditorPopupContext context, Action<JsonObject>? confirmedMutation = null, bool rebuild = false, EditorPopupInputChange? inputChange = null)
+    {
+        if (!ReferenceEquals(context.Owner,this) || context.Retired || !ReferenceEquals(editorPopup,context)) return false;
+        var dataChanged = false;
+        try
+        {
+            var accepted = Guard.TryMutateChecked(context.Generation,
+                () => !disposed && !IsBusy && !HasForeignModal && ReferenceEquals(document,context.Document)
+                    && original is { } selected && selected.Id == context.ContactId && selected.Path == context.ContactPath && selected.Root == context.Root
+                    && catalog is { } current && current.Root == context.Root && current.WorkspaceId == context.WorkspaceId
+                    && Guid.TryParse(document?["id"]?.ToString(),out var currentId) && currentId == context.ContactId
+                    && (confirmedMutation is null && inputChange is null || context.Editing && IsEditing && selected.ReadOnlyReason is null && current.ReadOnlyReason is null),
+                () =>
+                {
+                    var inputValues = inputChange?.Invalid?.ToArray() ?? [];
+                    if (inputValues.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null || string.IsNullOrWhiteSpace(pair.Value.Error)))
+                        throw new ArgumentException("Для проблемного ввода нужны путь, значение и сообщение об ошибке.",nameof(inputChange));
+                    JsonObject? candidate = null;
+                    if (confirmedMutation is not null)
+                    {
+                        candidate = (JsonObject)document!.DeepClone();
+                        confirmedMutation(candidate);
+                        dataChanged = !JsonNode.DeepEquals(document,candidate);
+                    }
+                    editorPopup = null; context.Retired = true;
+                    if (dataChanged) ApplyObjectPatch(document!,candidate!);
+                    if (inputChange?.ClearPrefix is { } prefix && !string.IsNullOrWhiteSpace(prefix))
+                    {
+                        foreach (var key in invalidInputs.Keys.Concat(validationErrors.Keys).Where(key => key == prefix || key.StartsWith(prefix + ".",StringComparison.Ordinal)).Distinct().ToArray())
+                        { invalidInputs.Remove(key); validationErrors.Remove(key); }
+                    }
+                    foreach (var pair in inputValues) { invalidInputs[pair.Key] = pair.Value.Value; validationErrors[pair.Key] = pair.Value.Error; }
+                    return dataChanged || inputValues.Length > 0;
+                });
+            if (!accepted)
+            {
+                RetirePopup(context);
+                Status = "Результат выбора устарел или приложение занято. Текущий черновик сохранён; откройте выбор снова.";
+            }
+            else if (dataChanged || inputChange is not null) { RefreshValidation(); if (rebuild) StructureChanged?.Invoke(); }
+            Notify(); return accepted;
+        }
+        catch (Exception error)
+        {
+            RetirePopup(context); Error = error.Message;
+            Status = "Не удалось применить выбор. Текущий черновик сохранён."; Notify(); return false;
+        }
+    }
+    public bool IsEditorPopupCurrent(EditorPopupContext? context) => context is not null && !disposed && !context.Retired
+        && ReferenceEquals(context.Owner,this) && ReferenceEquals(editorPopup,context) && ReferenceEquals(context.Document,document)
+        && context.Generation == Guard.Generation && original is { } selected && context.ContactId == selected.Id && context.ContactPath == selected.Path
+        && context.Root == selected.Root && catalog is { } current && context.Root == current.Root && context.WorkspaceId == current.WorkspaceId;
+    private void RetirePopup(EditorPopupContext context)
+    {
+        if (ReferenceEquals(editorPopup,context)) editorPopup = null;
+        context.Retired = true;
+    }
+    private static void ApplyObjectPatch(JsonObject current, JsonObject candidate)
+    {
+        foreach (var key in current.Select(pair => pair.Key).Except(candidate.Select(pair => pair.Key)).ToArray()) current.Remove(key);
+        foreach (var pair in candidate)
+        {
+            if (JsonNode.DeepEquals(current[pair.Key],pair.Value)) continue;
+            if (current[pair.Key] is JsonObject oldObject && pair.Value is JsonObject newObject) ApplyObjectPatch(oldObject,newObject);
+            else current[pair.Key] = pair.Value?.DeepClone();
+        }
+    }
+    public string GetInput(string path, string fallback) => invalidInputs.GetValueOrDefault(path,fallback);
+    public bool SetInvalidInput(string path, string typedValue, string message)
+    {
+        if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(message) || !IsEditing || !CanEdit || document is null) return false;
+        if (invalidInputs.GetValueOrDefault(path) == typedValue && validationErrors.GetValueOrDefault(path) == message) return true;
+        if (!Guard.TryMutate(() => { invalidInputs[path] = typedValue; validationErrors[path] = message; })) return false;
+        RefreshValidation(); Notify(); return true;
+    }
+    public bool ClearInput(string path, bool includeChildren = true)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !IsEditing || !CanEdit) return false;
+        var keys = invalidInputs.Keys.Concat(validationErrors.Keys).Where(key => key == path || includeChildren && key.StartsWith(path + ".",StringComparison.Ordinal)).Distinct().ToArray();
+        if (keys.Length == 0) return true;
+        if (!Guard.TryMutateChecked(Guard.Generation, () => IsEditing && CanEdit,
+            () => { foreach (var key in keys) { invalidInputs.Remove(key); validationErrors.Remove(key); } return false; })) return false;
+        RefreshValidation(); Notify(); return true;
+    }
+    public bool RemoveRowInputs(string categoryPath, int removedIndex)
+    {
+        if (string.IsNullOrWhiteSpace(categoryPath) || removedIndex < 0 || !IsEditing || !CanEdit) return false;
+        string? NewPath(string path)
+        {
+            if (!path.StartsWith(categoryPath + ".",StringComparison.Ordinal)) return path;
+            var start = categoryPath.Length + 1; var end = path.IndexOf('.',start);
+            if (end < 0) end = path.Length;
+            if (!int.TryParse(path.AsSpan(start,end-start),out var index)) return path;
+            return index == removedIndex ? null : index > removedIndex ? categoryPath + "." + (index - 1) + path[end..] : path;
+        }
+        if (!invalidInputs.Keys.Concat(validationErrors.Keys).Any(path => NewPath(path) != path)) return true;
+        if (!Guard.TryMutateChecked(Guard.Generation, () => IsEditing && CanEdit,
+            () =>
+            {
+                foreach (var values in new[] { invalidInputs,validationErrors })
+                {
+                    var mapped = values.Select(pair => (Path:NewPath(pair.Key),pair.Value)).Where(pair => pair.Path is not null).ToArray();
+                    values.Clear(); foreach (var pair in mapped) values[pair.Path!] = pair.Value;
+                }
+                return false;
+            })) return false;
+        RefreshValidation(); Notify(); return true;
+    }
+    public void RequestErrorFocus(string path)
+    { if (!disposed && validationErrors.ContainsKey(path)) ErrorFocusRequested?.Invoke(path); }
+    public void StayWithDraft()
+    { if (HasExternalDrift && !disposed) Status = "Черновик оставлен в карточке. Файл изменился вне редактора; перед повторной записью загрузите актуальную версию."; }
+    private void RefreshValidation()
+    {
+        Error = string.Join("\n",validationErrors.Values);
+        if (Status.StartsWith("Не сохранено. Ошибки в полях:", StringComparison.Ordinal) || Status == "Ошибки исправлены. Сохраните изменения.")
+            Status = validationErrors.Count > 0 ? $"Не сохранено. Ошибки в полях: {validationErrors.Count}." : "Ошибки исправлены. Сохраните изменения.";
+        OnPropertyChanged(nameof(ValidationErrors));
+    }
+    private void ClearDraftUi()
+    {
+        if (editorPopup is { } popup) RetirePopup(popup);
+        invalidInputs.Clear(); validationErrors.Clear(); HasExternalDrift = false; Interlocked.Exchange(ref selectedFileChange,0);
+    }
     public async Task CreateAsync()
     {
         if (!CanCreate || !await ResolveDraftAsync() || catalog is null) return;
@@ -221,8 +395,8 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     }
     private void SetSnapshot(ContactSnapshot snapshot)
     {
-        if (!Guard.Reset(change: () => { original = snapshot; document = (JsonObject)snapshot.Document.DeepClone(); photoEdit = new(); })) return;
-        validationErrors.Clear(); IsEditing = false; FieldSearch = ""; Error = ""; DecodePhoto(); Notify(); StructureChanged?.Invoke();
+        if (!Guard.Reset(change: () => { original = snapshot; document = (JsonObject)snapshot.Document.DeepClone(); photoEdit = new(); ClearDraftUi(); })) return;
+        IsEditing = false; FieldSearch = ""; Error = ""; DecodePhoto(); Notify(); StructureChanged?.Invoke();
     }
     public bool Mutate(Action<JsonObject> mutation, bool rebuild = false)
     {
@@ -230,19 +404,39 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
         var changed = Guard.TryMutate(() => mutation(document));
         if (changed)
         {
-            Error = ""; Notify();
+            RefreshValidation(); Notify();
             if (rebuild) StructureChanged?.Invoke();
         }
         return changed;
     }
-    public void SetStarred(bool value) => Mutate(doc => doc["starred"] = value);
-    public void SetLabel(Guid id, bool selected) => Mutate(doc =>
+    public void SetStarred(bool value) { if (value != Starred) Mutate(doc => doc["starred"] = value); }
+    public void SetLabel(Guid id, bool selected)
     {
-        var ids = (doc["labels"] as JsonArray ?? []).Select(n => Guid.Parse(n!.ToString())).ToHashSet();
-        if (selected) ids.Add(id); else ids.Remove(id);
-        doc["labels"] = new JsonArray(ids.Order().Select(id => JsonValue.Create(id.ToString())).ToArray());
-    });
-    public bool HasLabel(Guid id) => (document?["labels"] as JsonArray)?.Any(n => n?.ToString() == id.ToString()) == true;
+        if (id == Guid.Empty || selected == HasLabel(id) || selected && !Labels.ContainsKey(id)) return;
+        Mutate(doc => ApplyLabelDelta(doc, [(id, selected)]));
+    }
+    public void SetLabels(IEnumerable<Guid> selectedKnownIds)
+    {
+        var selected = selectedKnownIds.ToHashSet();
+        var delta = Labels.Keys.Where(id => selected.Contains(id) != HasLabel(id)).Select(id => (id, selected.Contains(id))).ToArray();
+        if (delta.Length > 0) Mutate(doc => ApplyLabelDelta(doc, delta));
+    }
+    public static void ApplyLabelDelta(JsonObject doc, IEnumerable<(Guid Id, bool Selected)> delta)
+    {
+        var labels = doc["labels"] as JsonArray;
+        foreach (var (id, selected) in delta)
+        {
+            if (id == Guid.Empty) continue;
+            var matches = labels?.Select((value,index) => (value,index)).Where(item => Guid.TryParse(item.value?.ToString(), out var existing) && existing == id).Select(item => item.index).ToArray() ?? [];
+            if (selected && matches.Length == 0)
+            {
+                if (labels is null) { labels = new(); doc["labels"] = labels; }
+                labels.Add(id.ToString());
+            }
+            else if (!selected) foreach (var index in matches.Reverse()) labels!.RemoveAt(index);
+        }
+    }
+    public bool HasLabel(Guid id) => (document?["labels"] as JsonArray)?.Any(n => Guid.TryParse(n?.ToString(),out var existing) && existing == id) == true;
     public bool ChangePhoto(byte[]? bytes)
     {
         if (!IsEditing || !CanEdit) return false;
@@ -280,12 +474,16 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     public void ValidationError(string message, string key = "input")
     {
         if (message.Length == 0) { foreach (var stale in validationErrors.Keys.Where(k => k == key || k.StartsWith(key + ".", StringComparison.Ordinal)).ToArray()) validationErrors.Remove(stale); } else validationErrors[key] = message;
-        Error = string.Join("\n", validationErrors.Values);
+        RefreshValidation();
     }
     public async Task<bool> SaveAsync(bool fromDecision = false)
     {
-        if (original is null || document is null || !IsEditing || IsBusy || IsActivityBusy || ShowDelete || ShowPhoto || ShowConfiguration || IsPickingPhoto || ShowDecision && !fromDecision) return false;
-        if (validationErrors.Count > 0) { Error = string.Join("\n", validationErrors.Values); return false; }
+        if (original is null || document is null || !IsEditing || IsBusy || IsActivityBusy || editorPopup is not null || ShowDelete || ShowPhoto || ShowConfiguration || IsPickingPhoto || ShowDecision && !fromDecision) return false;
+        if (validationErrors.Count > 0 || invalidInputs.Count > 0)
+        {
+            foreach (var path in invalidInputs.Keys) validationErrors.TryAdd(path,"Проверьте введённое значение.");
+            RefreshValidation();Status=$"Не сохранено. Ошибки в полях: {validationErrors.Count}.";RequestErrorFocus(validationErrors.Keys.First());return false;
+        }
         if (!IsDirty) { IsEditing = false; StructureChanged?.Invoke(); return true; }
         Interlocked.Exchange(ref externalWriteEvent,0);writing=true;Interlocked.Increment(ref fileChangeVersion);changedTimer.Stop();
         IsBusy = true; Error = ""; Status = "Сохраняем контакт в папку…";
@@ -304,15 +502,16 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
                 SetSnapshot(saved); await LoadAsync(saved.Root,reloadSelected:false); Error=e.Message;
                 Status="Контакт записан в папку. Завершение записи требует проверки восстановления."; return true;
             }
+            HasExternalDrift = e.Outcome == ContactWriteOutcome.Uncertain || HasExternalDrift;
             Error=e.Message; Status=e.Outcome == ContactWriteOutcome.Unchanged ? "Запись не выполнена. Черновик остаётся в карточке." : "Результат записи не подтверждён. Черновик сохранён; перечитайте файлы и проверьте восстановление."; return false;
         }
         catch (Exception e) when (e is SyncException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-        { Error = e.Message; Status = "Контакт не сохранён. Черновик остаётся в карточке."; return false; }
+        { if (e is SyncException { Code: "localDrift" }) HasExternalDrift = true; Error = e.Message; Status = "Контакт не сохранён. Черновик остаётся в карточке."; return false; }
         finally { try{EndWrite();}finally{IsBusy = false;} }
     }
     public async Task<bool> ResolveDraftAsync()
     {
-        if (ShowDelete || ShowPhoto || ShowConfiguration || IsPickingPhoto || IsBusy) return false;
+        if (editorPopup is not null || ShowDelete || ShowPhoto || ShowConfiguration || IsPickingPhoto || IsBusy) return false;
         if (!IsDirty) return true;
         if (decision is not null) return false;
         decision = new(TaskCreationOptions.RunContinuationsAsynchronously); ShowDecision = true;
@@ -330,8 +529,8 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     public void CancelEdit()
     {
         if (IsBusy || IsActivityBusy || HasModal || original is null) return;
-        if (original.IsNew) { if (!Guard.Reset(change: () => { original = null; document = null; })) return; validationErrors.Clear(); IsEditing = false; PhotoPreview?.Dispose(); PhotoPreview = null; Notify(); StructureChanged?.Invoke(); }
-        else SetSnapshot(original);
+        if (original.IsNew) { if (!Guard.Reset(change: () => { original = null; document = null; ClearDraftUi(); })) return; IsEditing = false; PhotoPreview?.Dispose(); PhotoPreview = null; Notify(); StructureChanged?.Invoke(); }
+        else { var drift = HasExternalDrift; SetSnapshot(original); HasExternalDrift = drift; }
     }
     public void AskDelete()
     {
@@ -341,13 +540,13 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     public void DismissDelete() { ShowDelete = false; Notify(); }
     public async Task ConfirmDeleteAsync()
     {
-        if (!ShowDelete || IsBusy || activity.IsActive || activity.IsApplying || original is null) return;
+        if (!ShowDelete || editorPopup is not null || ShowPhoto || ShowConfiguration || IsPickingPhoto || ShowDecision || IsBusy || activity.IsActive || activity.IsApplying || original is null) return;
         Interlocked.Exchange(ref externalWriteEvent,0);writing=true;Interlocked.Increment(ref fileChangeVersion);changedTimer.Stop();
         IsBusy = true; Error = ""; Status = "Перемещаем контакт в локальную корзину…";
         try
         {
             await Task.Run(() => service.DeleteAsync(original, account()));
-            var root = original.Root; original = null; document = null; Guard.Reset(); ShowDelete = false; PhotoPreview?.Dispose(); PhotoPreview = null;
+            var root = original.Root; original = null; document = null; Guard.Reset(change:ClearDraftUi); ShowDelete = false; PhotoPreview?.Dispose(); PhotoPreview = null;
             Status = "Контакт перемещён в локальную корзину. Google пока не изменён."; onSaved(); StructureChanged?.Invoke(); await LoadAsync(root);
         }
         catch (ContactEditorWriteException e)
@@ -356,7 +555,7 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
             Error=e.Message;
             if(e.Outcome == ContactWriteOutcome.Committed)
             {
-                var root=original!.Root; Guard.Reset(change:()=> { original=null; document=null; }); ShowDelete=false;
+                var root=original!.Root; Guard.Reset(change:()=> { original=null; document=null; ClearDraftUi(); }); ShowDelete=false;
                 PhotoPreview?.Dispose();PhotoPreview=null;StructureChanged?.Invoke();await LoadAsync(root);
                 Error=e.Message;
                 Status="Контакт удалён из папки. Завершение операции требует проверки восстановления.";
@@ -383,14 +582,23 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     }
     public async Task ReloadSelectedAsync()
     {
-        if (original is null || original.IsNew || IsBusy) return;
-        var id = original.Id;
+        if (original is null || original.IsNew || IsBusy || IsActivityBusy || HasModal) return;
+        var selected = original;
         if (!await ResolveDraftAsync()) return;
-        original = null;
-        await SelectAsync(id);
+        if (original?.Id != selected.Id || IsActivityBusy || HasModal || IsBusy) return;
+        IsBusy = true;
+        try
+        {
+            var fresh = await Task.Run(() => service.ReadAsync(selected.Root,selected.Id,account()));
+            SetSnapshot(fresh); Status = "Загружена актуальная версия контакта.";
+        }
+        catch (Exception error) when (error is SyncException or IOException or UnauthorizedAccessException)
+        { HasExternalDrift = true; Error = error.Message; Status = "Актуальную версию не удалось загрузить. Показанная карточка сохранена; проверьте файл и повторите загрузку."; }
+        finally { IsBusy = false; }
     }
     public void Dispose()
     {
+        if (editorPopup is { } popup) RetirePopup(popup);
         disposed = true; decision?.TrySetResult("stay"); watcher?.Dispose(); changedTimer.Dispose(); loading?.Cancel(); loading?.Dispose(); querying?.Cancel(); querying?.Dispose();
         PhotoPreview?.Dispose(); Guard.Changed -= Notify; activity.Changed -= ActivityChanged;
     }

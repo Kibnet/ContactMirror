@@ -12,6 +12,10 @@ public abstract partial class RealPipelineScenariosBase<TSession> where TSession
     protected virtual Task FinishEditorVideoAsync()=>Task.CompletedTask;
     protected virtual Task InspectEditorNativeDirtyLifecycleAsync()=>Task.CompletedTask;
     protected virtual Task SelectEditorPhotoAsync(string file,bool cancel)=>throw new NotSupportedException("Runtime must implement picker boundary.");
+    protected virtual Task AddEditorRelationAsync(string person,string customType)=>throw new NotSupportedException("Runtime must use the Add/Find field UI and custom type control.");
+    protected virtual Task RemoveEditorPhotoAsync()=>throw new NotSupportedException("Runtime must use the photo menu.");
+    protected virtual Task ReloadEditorCardAsync()=>throw new NotSupportedException("Runtime must use the contact actions menu.");
+    protected virtual Task DeleteEditorContactAsync()=>throw new NotSupportedException("Runtime must use the contact actions menu.");
     private async Task WaitForEditorAsync(Func<bool> ready)
     {
         for(var n=0;n<150;n++)
@@ -28,11 +32,8 @@ public abstract partial class RealPipelineScenariosBase<TSession> where TSession
         Console.WriteLine("Editor CRUD: open and create.");
         Page.WaitUntilNameContains(static p=>p.AccountLabel,"Демонстрационный аккаунт").ClickButton(static p=>p.ContactsNavigationButton).ClickButton(static p=>p.ContactCreateButton)
             .ClickButton(static p=>p.AddContactName).EnterText(static p=>p.ContactGivenName,"Новый тестовый").EnterText(static p=>p.ContactSurname,"Редакторов");
-        Console.WriteLine("Editor CRUD: common fields entered; show all.");
-        Page.SetChecked(static p=>p.ContactShowAllFields,true);
-        Console.WriteLine("Editor CRUD: search rare category.");
-        Page.EnterText(static p=>p.ContactFieldSearch,"relations")
-            .ClickButton(static p=>p.AddContactRelation).EnterText(static p=>p.ContactRelationPerson,"Тестовый коллега").EnterText(static p=>p.ContactRelationType,"custom-colleague");
+        Console.WriteLine("Editor CRUD: common fields entered; add and find rare category.");
+        await AddEditorRelationAsync("Тестовый коллега","custom-colleague");
         Console.WriteLine("Editor CRUD: rare fields entered; picker.");
         var photo=Path.Combine(IntegrationRoot,"selected-photo.png");byte[] bytes;
         using(var bitmap=new SkiaSharp.SKBitmap(40,40)){bitmap.Erase(SkiaSharp.SKColors.Teal);using var image=SkiaSharp.SKImage.FromBitmap(bitmap);using var encoded=image.Encode(SkiaSharp.SKEncodedImageFormat.Png,100);bytes=encoded.ToArray();}
@@ -59,8 +60,8 @@ public abstract partial class RealPipelineScenariosBase<TSession> where TSession
         Page.ClickButton(static p=>p.ContactSaveButton).WaitUntilNameContains(static p=>p.ContactsStatus,"Сохранено в папку",timeoutMs:15000);
         saved=JsonNode.Parse(await File.ReadAllTextAsync(file))!;await Assert.That(await File.ReadAllBytesAsync(Path.Combine(IntegrationRoot,"workspace",saved["photo"]!.ToString()))).IsEquivalentTo(bytes);
         CaptureCheckpoint("editor-new-rare-fields-photo");
-        Page.ClickButton(static p=>p.ContactDeleteButton).ClickButton(static p=>p.ContactDeleteCancel);await Assert.That(File.Exists(file)).IsTrue();
-        Page.ClickButton(static p=>p.ContactDeleteButton).ClickButton(static p=>p.ContactDeleteConfirm).WaitUntilNameContains(static p=>p.ContactsStatus,"Контакт перемещён",timeoutMs:15000);await Assert.That(File.Exists(file)).IsFalse();
+        await DeleteEditorContactAsync();Page.ClickButton(static p=>p.ContactDeleteCancel);await Assert.That(File.Exists(file)).IsTrue();
+        await DeleteEditorContactAsync();Page.ClickButton(static p=>p.ContactDeleteConfirm).WaitUntilNameContains(static p=>p.ContactsStatus,"Контакт перемещён",timeoutMs:15000);await Assert.That(File.Exists(file)).IsFalse();
         await Assert.That(Directory.GetFiles(Path.Combine(IntegrationRoot,"workspace",".contactmirror","editor-trash"),"before.photo",SearchOption.AllDirectories).Length).IsEqualTo(1);
         await Assert.That(File.Exists(Path.Combine(IntegrationRoot,"remote.json"))).IsFalse();CaptureCheckpoint("editor-local-delete-empty");
     }
@@ -80,6 +81,7 @@ public abstract partial class RealPipelineScenariosBase<TSession> where TSession
             Page.ClickButton(static p=>p.ContactsNavigationButton);
             await WaitForEditorAsync(()=>Page.ContactsSearch.IsEnabled);
             Page.EnterText(static p=>p.ContactsSearch,id);
+            await WaitForEditorAsync(()=>Page.ContactsCount.Name.Contains("Показано 1 из",StringComparison.Ordinal));
             await WaitForEditorAsync(()=>Page.ContactOpenButton.IsEnabled);
             Page.ClickButton(static p=>p.ContactOpenButton);
             await WaitForEditorAsync(()=>Page.ContactEditButton.IsEnabled);
@@ -95,7 +97,7 @@ public abstract partial class RealPipelineScenariosBase<TSession> where TSession
             await Assert.That(saved["data"]!["names"]![0]!["familyName"]!.ToString()).IsEqualTo("Редакторова");
             await Assert.That(JsonNode.DeepEquals(google,saved["google"])).IsTrue();
             await Assert.That(await File.ReadAllBytesAsync(Path.Combine(IntegrationRoot,"remote.json"))).IsEquivalentTo(remoteBefore);
-            Page.ClickButton(static p=>p.ContactReloadButton);
+            await ReloadEditorCardAsync();
             await WaitForEditorAsync(()=>Page.ContactEditButton.IsEnabled);
             Page.ClickButton(static p=>p.ContactEditButton);
             await Assert.That(Page.ContactSurname.Text).IsEqualTo("Редакторова");
@@ -105,10 +107,11 @@ public abstract partial class RealPipelineScenariosBase<TSession> where TSession
             Page.ClickButton(static p=>p.ContactsNavigationButton);
             await WaitForEditorAsync(()=>Page.ContactsSearch.IsEnabled);
             Page.EnterText(static p=>p.ContactsSearch,id);
+            await WaitForEditorAsync(()=>Page.ContactsCount.Name.Contains("Показано 1 из",StringComparison.Ordinal));
             await WaitForEditorAsync(()=>Page.ContactOpenButton.IsEnabled);
             Page.ClickButton(static p=>p.ContactOpenButton);
             await WaitForEditorAsync(()=>Page.ContactEditButton.IsEnabled);
-            Page.ClickButton(static p=>p.ContactEditButton).ClickButton(static p=>p.PhotoRemoveButton).ClickButton(static p=>p.ContactSaveButton)
+            Page.ClickButton(static p=>p.ContactEditButton);await RemoveEditorPhotoAsync();Page.ClickButton(static p=>p.ContactSaveButton)
                 .WaitUntilNameContains(static p=>p.ContactsStatus,"Сохранено в папку",timeoutMs:15000);
             await Assert.That(JsonNode.Parse(await File.ReadAllTextAsync(contact.Path))!["photo"] is null).IsTrue();
             CaptureCheckpoint("editor-saved-card");

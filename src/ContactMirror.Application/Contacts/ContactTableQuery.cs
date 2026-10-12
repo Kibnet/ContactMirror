@@ -40,7 +40,10 @@ public static class ContactTableQuery
         void Add(ContactFieldDescriptor field, string title)
         {
             if (field.Children.Count == 0 || field.Path.Count(c => c == '.') == 1 || field.IsDate)
-                result.Add(new(field.Path, title, field.Type, field.IsDate));
+            {
+                var descriptor = new ContactColumnDescriptor(field.Path, title, field.Type, field.IsDate);
+                result.Add(descriptor with { Title = ContactValuePresenter.ColumnTitle(descriptor) });
+            }
             foreach (var child in field.Children) Add(child, title + " · " + child.Title);
         }
     }
@@ -194,8 +197,10 @@ public static class ContactTableQuery
             .Select(ScalarText).Concat(GetSortValues(document, "labels", labels).Select(ScalarText)).Append(DisplayName(document)).Append(document["id"]?.ToString() ?? ""));
         if (Contains(text, query)) return true;
         var digits = Digits(query);
-        if (digits.Length == 0 || query.Any(char.IsLetter)) return false;
-        return GetValues(document, "data.phoneNumbers.value").Any(value => Digits(value.ToString()).Contains(digits, StringComparison.Ordinal));
+        if (digits.Length > 0 && !query.Any(char.IsLetter)
+            && GetValues(document, "data.phoneNumbers.value").Any(value => Digits(value.ToString()).Contains(digits, StringComparison.Ordinal))) return true;
+        // Friendly aliases only extend full-text search; typed filters and sorting keep raw values.
+        return ContactValuePresenter.SearchAliases(document).Any(alias => Contains(alias, query));
     }
 
     private static IReadOnlyList<JsonNode> GetSortValues(JsonObject document, string id, IReadOnlyDictionary<Guid, string>? labels)

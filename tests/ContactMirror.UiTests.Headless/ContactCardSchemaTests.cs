@@ -27,26 +27,44 @@ public sealed partial class MainWindowHeadlessTests
         foreach (var category in CapabilityRegistry.WritableFields) document["data"]![category] = new JsonArray(new JsonObject());
         using var card = await OpenCard(document);
         await ExpandCard(card);
+        HeadlessRuntime.Dispatch(() =>
+        {
+            foreach (var mode in CardControls(card.Root).OfType<ComboBox>().Where(control => AutomationProperties.GetAutomationId(control)?.StartsWith("DateMode:data.",StringComparison.Ordinal) == true).ToArray())
+                SelectFullDateMode(mode);
+        });
         string[] ids = [];
         HeadlessRuntime.Dispatch(() => ids = CardControls(card.Root).Select(AutomationProperties.GetAutomationId).Where(id => id?.StartsWith("Editor:data.", StringComparison.Ordinal) == true).Select(id => id!).Order().ToArray());
         await Assert.That(oracle.Count).IsEqualTo(111);
         await Assert.That(string.Join("\n", ids)).IsEqualTo(string.Join("\n", oracle.Select(leaf => "Editor:" + leaf.Path).Order()));
         await Assert.That(ids.Any(id => id.Contains(".primary", StringComparison.Ordinal) || id.Contains(".verified", StringComparison.Ordinal) || id.Contains(".source.", StringComparison.Ordinal))).IsFalse();
         var expected = (JsonObject)document.DeepClone();
-        HeadlessRuntime.Dispatch(() =>
+        foreach (var leaf in oracle)
         {
-            foreach (var leaf in oracle)
+            HeadlessRuntime.Dispatch(() =>
             {
                 var editor = CardControls(card.Root).Single(control => AutomationProperties.GetAutomationId(control) == "Editor:" + leaf.Path);
-                if (editor is TextBox text) text.Text = leaf.Value.ToString();
+                if (editor is TextBox text) text.Text = leaf.Path.EndsWith(".fullTimeEquivalentMillipercent",StringComparison.Ordinal) ? "85" : leaf.Value.ToString();
                 else if (editor is CheckBox checkbox) checkbox.IsChecked = leaf.Value.GetValue<bool>();
                 else if (editor is ComboBox choice)
-                    choice.SelectedItem = ((IEnumerable<ContactFieldOption>)choice.ItemsSource!).Single(option => option.Value == leaf.Value.GetValue<string>());
+                {
+                    var options = ((IEnumerable<ContactFieldOption>)choice.ItemsSource!).ToArray();
+                    var exact = options.SingleOrDefault(option => option.Value == leaf.Value.ToString());
+                    choice.IsDropDownOpen = true;
+                    choice.SelectedItem = exact ?? options.Single(option => option.Title == "Свой вариант…");
+                    choice.IsDropDownOpen = false;
+                    if (exact is null)
+                    {
+                        CardText(card,"CustomTypeInput").Text = leaf.Value.GetValue<string>();
+                        CardControls(card.Root).OfType<Button>().Single(control => AutomationProperties.GetAutomationId(control) == "CustomTypeApply")
+                            .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    }
+                }
                 else throw new InvalidOperationException("Поле не имеет typed editor: " + leaf.Path);
-                SetGolden(expected, leaf.Path, leaf.Value.DeepClone());
-            }
-        });
+            });
+            SetGolden(expected, leaf.Path, leaf.Value.DeepClone());
+        }
         await Task.Delay(100);
+        await Assert.That(card.Model.HasModal).IsFalse();
         var saved = await OnCardUi(() => card.Model.SaveAsync());
         await Assert.That(saved).IsTrue();
         await Assert.That(card.Store.Saves).IsEqualTo(1);
@@ -93,6 +111,7 @@ public sealed partial class MainWindowHeadlessTests
         using var card = await OpenCard(document); await ExpandCard(card);
         HeadlessRuntime.Dispatch(() =>
         {
+            SelectFullDateMode(CardControls(card.Root).OfType<ComboBox>().Single(control => AutomationProperties.GetAutomationId(control) == "DateMode:data.birthdays.0.date"));
             CardText(card, "Editor:data.birthdays.0.date.year").Text = "не число";
             CardText(card, "Editor:data.names.0.givenName").Text = "Анна после правки";
         });
@@ -160,6 +179,12 @@ public sealed partial class MainWindowHeadlessTests
 
     private static IEnumerable<Control> CardControls(Control root) => root.GetLogicalDescendants().OfType<Control>();
     private static TextBox CardText(CardFixture card, string id) => CardControls(card.Root).OfType<TextBox>().Single(control => AutomationProperties.GetAutomationId(control) == id);
+    private static void SelectFullDateMode(ComboBox combo)
+    {
+        combo.IsDropDownOpen = true;
+        combo.SelectedItem = ((IEnumerable<ContactFieldOption>)combo.ItemsSource!).Single(option => option.Title == "Полная дата");
+        combo.IsDropDownOpen = false;
+    }
     private static Task<T> OnCardUi<T>(Func<Task<T>> action) => HeadlessEditorUi.RunAsync(action);
     private async Task<CardFixture> OpenCard(JsonObject document, bool allFields = true)
     {
@@ -184,7 +209,15 @@ public sealed partial class MainWindowHeadlessTests
         });
         Console.WriteLine("Schema card: controls attached.");
         await Task.Delay(100);
-        return new(model, store, root, () => { Session.Inner.MainWindow.Content = before; });
+        var fixture = new CardFixture(model,store,root,() => { Session.Inner.MainWindow.Content = before; });
+        void Rebuild()
+        {
+            fixture.Root = ContactCardControls.Build(model);
+            ((ScrollViewer)Session.Inner.MainWindow.Content!).Content = fixture.Root;
+        }
+        HeadlessRuntime.Dispatch(() => { model.StructureChanged += Rebuild; model.FieldVisibilityChanged += Rebuild; });
+        fixture.Unsubscribe = () => { model.StructureChanged -= Rebuild; model.FieldVisibilityChanged -= Rebuild; };
+        return fixture;
     }
     private static async Task ExpandCard(CardFixture card)
     {
@@ -203,9 +236,10 @@ public sealed partial class MainWindowHeadlessTests
         public ContactsViewModel Model => model;
         public CardStore Store => store;
         public Control Root { get; set; } = root;
+        public Action? Unsubscribe { get; set; }
         public void Dispose()
         {
-            HeadlessRuntime.Dispatch(() => { model.CancelEdit(); model.Dispose(); restore(); });
+            HeadlessRuntime.Dispatch(() => { Unsubscribe?.Invoke(); model.CancelEdit(); model.Dispose(); restore(); });
             Directory.Delete(store.Root);
         }
     }

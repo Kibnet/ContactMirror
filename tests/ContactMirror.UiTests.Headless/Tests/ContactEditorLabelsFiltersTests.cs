@@ -65,9 +65,41 @@ public sealed partial class MainWindowHeadlessTests
             await EditorUi(() => UxModel().Contacts.LoadAsync(fixture.Root));
             await EditorUi(() => UxModel().Contacts.ReloadSelectedAsync());
             await LabelsClick("ContactEditButton");
+            var beforeLabels = ""; var emptyEntry = false;
+            HeadlessRuntime.Dispatch(() =>
+            {
+                beforeLabels = UxModel().Contacts.Document!.ToJsonString();
+                emptyEntry = ((Button)EditorControl("ContactLabelsButton")).Content?.ToString()?.Contains("Добавить ярлык", StringComparison.Ordinal) == true
+                    && !UxModel().Contacts.HasLabel(targetLabel) && !UxModel().Contacts.IsDirty;
+            });
+            await Assert.That(emptyEntry).IsTrue();
+            var unmodifiedBytes = await File.ReadAllBytesAsync(file);
+            await LabelsClick("ContactLabelsButton");
+            var selectedCount = ""; HeadlessRuntime.Dispatch(() => selectedCount = ((TextBlock)EditorControl("ContactLabelCount")).Text ?? "");
+            await Assert.That(selectedCount).IsEqualTo("Выбрано: 0");
+            await LabelsToggle(() => (CheckBox)EditorControl("ChooseLabel:" + targetLabel));
+            var stagedOnly = false;
+            HeadlessRuntime.Dispatch(() => stagedOnly = ((TextBlock)EditorControl("ContactLabelCount")).Text == "Выбрано: 1"
+                && UxModel().Contacts.Document!.ToJsonString() == beforeLabels && !UxModel().Contacts.IsDirty);
+            await Assert.That(stagedOnly).IsTrue();
+            await LabelsClick("ContactLabelsCancel");
+            var cancelPreserved = false;
+            HeadlessRuntime.Dispatch(() => cancelPreserved = UxModel().Contacts.Document!.ToJsonString() == beforeLabels
+                && !UxModel().Contacts.HasModal
+                && UxModel().Contacts.IsEditing && !UxModel().Contacts.IsDirty);
+            await Assert.That(cancelPreserved).IsTrue();
+            await Assert.That((await File.ReadAllBytesAsync(file)).SequenceEqual(unmodifiedBytes)).IsTrue();
+            await LabelsClick("ContactLabelsButton"); await LabelsClick("ContactLabelsDone");
+            var unchangedDone = false;
+            HeadlessRuntime.Dispatch(() => unchangedDone = UxModel().Contacts.Document!.ToJsonString() == beforeLabels
+                && !UxModel().Contacts.IsDirty && !UxModel().Contacts.HasModal);
+            await Assert.That(unchangedDone).IsTrue();
+            await Assert.That((await File.ReadAllBytesAsync(file)).SequenceEqual(unmodifiedBytes)).IsTrue();
             await LabelsToggle(() => (CheckBox)EditorControl("Editor:starred"));
-            await LabelsToggle(() => (CheckBox)EditorControl("Editor:labels:" + targetLabel));
-            await LifecycleWait(() => UxModel().Contacts.IsDirty && UxModel().Contacts.Starred && UxModel().Contacts.HasLabel(targetLabel), "label and starred checkboxes mutate draft");
+            await LabelsClick("ContactLabelsButton");
+            await LabelsToggle(() => (CheckBox)EditorControl("ChooseLabel:" + targetLabel));
+            await LabelsClick("ContactLabelsDone");
+            await LifecycleWait(() => UxModel().Contacts.IsDirty && UxModel().Contacts.Starred && UxModel().Contacts.HasLabel(targetLabel), "label popup confirmation and starred checkbox mutate draft");
             await LabelsClick("ContactSaveButton");
             await LifecycleWait(() => !UxModel().Contacts.IsBusy && !UxModel().Contacts.IsEditing && !UxModel().Contacts.IsDirty, "label and starred local save completes");
 
@@ -81,7 +113,7 @@ public sealed partial class MainWindowHeadlessTests
             await Assert.That(saved.Document["labels"]!.AsArray().Single()!.GetValue<string>()).IsEqualTo(targetLabel.ToString());
             await Assert.That(saved.Document["starred"]!.GetValue<bool>()).IsTrue();
             await Assert.That(coordinator.AppliedCount).IsEqualTo(0);
-            await LabelsClick("ContactReloadButton");
+            await LabelsClick("ContactActionsButton"); await LabelsClick("ContactReloadButton");
             await LifecycleWait(() => !UxModel().Contacts.IsBusy && UxModel().Contacts.Original?.Hash == saved.Hash, "saved flags reopen in main editor");
 
             var preferencesFile = Path.Combine(fixture.Root, "isolated-label-filter-preferences.json");
@@ -182,6 +214,9 @@ public sealed partial class MainWindowHeadlessTests
         {
             HeadlessRuntime.Dispatch(() =>
             {
+                Session.Inner.MainWindow.GetVisualDescendants().OfType<Button>()
+                    .FirstOrDefault(button => button.IsEffectivelyVisible && AutomationProperties.GetAutomationId(button) is "ContactLabelsCancel" or "ContactActionsClose")
+                    ?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 if (filtersModel is not null) { filtersModel.ShowConfiguration = false; filtersModel.CancelEdit(); filtersModel.Dispose(); }
                 if (reopenedModel is not null) { reopenedModel.ShowConfiguration = false; reopenedModel.Dispose(); }
                 if (originalContent is not null) Session.Inner.MainWindow.Content = originalContent;
@@ -198,8 +233,10 @@ public sealed partial class MainWindowHeadlessTests
 
     private async Task LabelsClick(string id)
     {
+        await LifecycleWait(() => Session.Inner.MainWindow.GetVisualDescendants().OfType<Control>()
+            .Any(control => AutomationProperties.GetAutomationId(control) == id && control.IsEffectivelyVisible && control.IsEnabled), "visible label/filter button: " + id);
         HeadlessRuntime.Dispatch(() => ((Button)EditorControl(id)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
-        await Task.Delay(30);
+        await Task.Delay(50);
     }
 
     private async Task LabelsToggle(Func<CheckBox> find)

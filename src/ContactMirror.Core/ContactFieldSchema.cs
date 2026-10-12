@@ -3,7 +3,10 @@ using System.Text.Json.Nodes;
 
 namespace ContactMirror.Core;
 
-public sealed record ContactFieldOption(string Value, string Title);
+public sealed record ContactFieldOption(string Value, string Title)
+{
+    public override string ToString() => Title;
+}
 public sealed record ContactFieldDescriptor(string Name, string Title, string Type,
     IReadOnlyList<ContactFieldDescriptor> Children, IReadOnlyList<ContactFieldOption> Options,
     bool IsSingleton, string Path, bool IsDate = false);

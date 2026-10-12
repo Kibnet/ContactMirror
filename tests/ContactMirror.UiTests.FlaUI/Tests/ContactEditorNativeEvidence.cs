@@ -48,7 +48,7 @@ public sealed partial class IntegratedDemoFlaUiTests
     }
     protected override async Task SelectEditorPhotoAsync(string file,bool cancel)
     {
-        Page.ClickButton(static p=>p.PhotoChangeButton);
+        await EditorNativeClick("PhotoMenuButton");await EditorNativeClick("PhotoChangeButton");
         global::FlaUI.Core.AutomationElements.Window? dialog=null;
         for(var n=0;n<50;n++){dialog=Session.Inner.MainWindow.ModalWindows.FirstOrDefault();if(dialog is not null)break;await Task.Delay(100);}
         if(dialog is null)throw new InvalidOperationException("Native photo picker did not open.");
@@ -93,44 +93,51 @@ public sealed partial class IntegratedDemoFlaUiTests
             Console.WriteLine("Native picker status: "+Page.ContactsStatus.Name);
         }
     }
-    private Task<string>? _editorVideoError;
-    private Task<string>? _editorVideoOutput;
+    protected override async Task AddEditorRelationAsync(string person,string customType)
+    {
+        await EditorNativeClick("ContactAddFieldButton");
+        (await EditorNativeWait("ContactFieldSearch")).AsTextBox().Enter("relations");
+        await EditorNativeClick("FindResult:data.relations.0");
+        await EditorNativeWait("Editor:data.relations.0.person");
+        await EditorNativeClick("ContactFindButton");
+        (await EditorNativeWait("ContactFieldSearch")).AsTextBox().Enter("data.relations.0.person");
+        await EditorNativeClick("FindResult:data.relations.0.person");
+        (await EditorNativeWait("Editor:data.relations.0.person")).AsTextBox().Enter(person);
+        var typeChoice=(await EditorNativeWait("Editor:data.relations.0.type")).AsComboBox();typeChoice.Select("Свой вариант…");typeChoice.Collapse();
+        (await EditorNativeWait("CustomTypeInput")).AsTextBox().Enter(customType);
+        await EditorNativeClick("CustomTypeApply");
+        var selected=(await EditorNativeWait("Editor:data.relations.0.type")).AsComboBox().SelectedItem?.Text;
+        await Assert.That(selected).IsEqualTo(customType);
+    }
+    protected override async Task RemoveEditorPhotoAsync() {await EditorNativeClick("PhotoMenuButton");await EditorNativeClick("PhotoRemoveButton");}
+    protected override async Task ReloadEditorCardAsync() {await EditorNativeClick("ContactActionsButton");await EditorNativeClick("ContactReloadButton");}
+    protected override async Task DeleteEditorContactAsync() {await EditorNativeClick("ContactActionsButton");await EditorNativeClick("ContactDeleteButton");}
+    private async Task EditorNativeClick(string id) => (await EditorNativeWait(id)).AsButton().Invoke();
+    private async Task<AutomationElement> EditorNativeWait(string id)
+    {
+        for(var attempt=0;attempt<150;attempt++)
+        {
+            var control=Session.Inner.MainWindow.FindFirstDescendant(Session.Inner.ConditionFactory.ByAutomationId(id));
+            if(control is {IsEnabled:true}&&!control.Properties.IsOffscreen.ValueOrDefault)return control;
+            await Task.Delay(50);
+        }
+        throw new TimeoutException("Visible native contact editor control did not become ready: "+id);
+    }
+    private NativeWindowVideo? _editorWindowVideo;
     protected override async Task StartEditorVideoAsync()
     {
-        if(Environment.GetEnvironmentVariable("CONTACTMIRROR_EDITOR_VIDEO")!="after")return;
+        var phase=Environment.GetEnvironmentVariable("CONTACTMIRROR_EDITOR_VIDEO");
+        if(phase is not ("before" or "after"))return;
         NativeWindowCapture.PositionForRecording(Session.Inner.MainWindow.Properties.NativeWindowHandle.Value);
-        var output=Path.Combine(Environment.GetEnvironmentVariable("CONTACTMIRROR_EDITOR_VIDEO_DIRECTORY")??Path.Combine(RepositoryRoot(),"chat-artifacts","editor"),$"editor-after-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}.mp4");
-        var start=new System.Diagnostics.ProcessStartInfo("pwsh") {UseShellExecute=false,CreateNoWindow=true,RedirectStandardError=true,RedirectStandardOutput=true};
-        foreach(var argument in new[]{"-NoProfile","-File",@"C:\Users\Kibnet\.codex\skills\record-app-screen\scripts\record_app_window.ps1","-ProcessName","ContactMirror.TestHost.exe","-Output",output,"-DurationSeconds","120","-Fps","15"})start.ArgumentList.Add(argument);
-        _video=System.Diagnostics.Process.Start(start)??throw new InvalidOperationException("Editor recorder did not start.");
-        _editorVideoError=_video.StandardError.ReadToEndAsync();
-        _editorVideoOutput=_video.StandardOutput.ReadToEndAsync();
-        try
-        {
-            var deadline=System.Diagnostics.Stopwatch.StartNew();
-            while(!File.Exists(output)||new FileInfo(output).Length<=4096)
-            {
-                if(_video.HasExited||deadline.Elapsed>TimeSpan.FromSeconds(60))throw new InvalidOperationException("Editor recording did not produce its first frames within 60 seconds.");
-                await Task.Delay(100);
-            }
-            Console.WriteLine("Editor automated native video: "+output);
-        }
-        catch
-        {
-            if(!_video.HasExited)_video.Kill(entireProcessTree:true);
-            await _video.WaitForExitAsync();_video.Dispose();_video=null;
-            throw;
-        }
+        var directory=Path.Combine(Environment.GetEnvironmentVariable("CONTACTMIRROR_EDITOR_VIDEO_DIRECTORY")??Path.Combine(RepositoryRoot(),"chat-artifacts","editor"),$"editor-{phase}-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}");
+        var output=Path.Combine(directory,"contact-editor.mp4");
+        _editorWindowVideo=await NativeWindowVideo.StartAsync(Session.Inner.MainWindow.Properties.NativeWindowHandle.Value,output,5);
+        Console.WriteLine($"Editor exact-HWND recording ready: {_editorWindowVideo.Width}x{_editorWindowVideo.Height}; first frame: {_editorWindowVideo.FirstFramePath}");
     }
     protected override async Task FinishEditorVideoAsync()
     {
-        if(_video is null)return;
-        try
-        {
-            await _video.WaitForExitAsync();
-            var stderr=await _editorVideoError!;var stdout=await _editorVideoOutput!;
-            if(_video.ExitCode!=0)throw new InvalidOperationException("Editor video recording failed: "+stderr+stdout);
-        }
-        finally{_video.Dispose();_video=null;}
+        if(_editorWindowVideo is not { } recording)return;
+        _editorWindowVideo=null;
+        Console.WriteLine("Editor exact-HWND native video: "+await recording.FinishAsync());
     }
 }
