@@ -60,11 +60,9 @@ public sealed partial class IntegratedDemoFlaUiTests
             var edit=dialog.FindFirstDescendant(Session.Inner.ConditionFactory.ByAutomationId("1148"))?.FindFirstDescendant(Session.Inner.ConditionFactory.ByControlType(global::FlaUI.Core.Definitions.ControlType.Edit))?.AsTextBox()
                 ?? dialog.FindFirstDescendant(Session.Inner.ConditionFactory.ByAutomationId("1001"))?.AsTextBox()
                 ?? throw new InvalidOperationException("Native file name input unavailable.");
-            edit.Focus();global::FlaUI.Core.Input.Keyboard.Press(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL);
-            global::FlaUI.Core.Input.Keyboard.Press(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_A);
-            global::FlaUI.Core.Input.Keyboard.Release(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_A);
-            global::FlaUI.Core.Input.Keyboard.Release(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL);
-            global::FlaUI.Core.Input.Keyboard.Type(file);
+            // Address the native filename control directly; injected keystrokes can lose
+            // characters while the shell finishes opening the dialog.
+            edit.Text = file;
             for(var n=0;n<100&&edit.Text!=file;n++)await Task.Delay(50);
             await Assert.That(edit.Text).IsEqualTo(file);
             Console.WriteLine("Native picker expected: "+file+"; filename: "+edit.Text);
@@ -96,15 +94,15 @@ public sealed partial class IntegratedDemoFlaUiTests
     protected override async Task AddEditorRelationAsync(string person,string customType)
     {
         await EditorNativeClick("ContactAddFieldButton");
-        (await EditorNativeWait("ContactFieldSearch")).AsTextBox().Enter("relations");
+        (await EditorNativeWait("ContactFieldSearch")).AsTextBox().Text = "relations";
         await EditorNativeClick("FindResult:data.relations.0");
         await EditorNativeWait("Editor:data.relations.0.person");
         await EditorNativeClick("ContactFindButton");
-        (await EditorNativeWait("ContactFieldSearch")).AsTextBox().Enter("data.relations.0.person");
+        (await EditorNativeWait("ContactFieldSearch")).AsTextBox().Text = "data.relations.0.person";
         await EditorNativeClick("FindResult:data.relations.0.person");
-        (await EditorNativeWait("Editor:data.relations.0.person")).AsTextBox().Enter(person);
+        (await EditorNativeWait("Editor:data.relations.0.person")).AsTextBox().Text = person;
         var typeChoice=(await EditorNativeWait("Editor:data.relations.0.type")).AsComboBox();typeChoice.Select("Свой вариант…");typeChoice.Collapse();
-        (await EditorNativeWait("CustomTypeInput")).AsTextBox().Enter(customType);
+        (await EditorNativeWait("CustomTypeInput")).AsTextBox().Text = customType;
         await EditorNativeClick("CustomTypeApply");
         var selected=(await EditorNativeWait("Editor:data.relations.0.type")).AsComboBox().SelectedItem?.Text;
         await Assert.That(selected).IsEqualTo(customType);

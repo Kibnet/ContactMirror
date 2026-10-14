@@ -38,6 +38,8 @@ public interface IWorkspaceStore
 }
 public interface IWorkspaceSession : IAsyncDisposable
 {
+    string? BindingHash => null;
+    bool HasRecoveryFlag => View.IsRecovery;
     string Root { get; }
     WorkspaceView View { get; }
     Task<LocalEntity?> ReadLocalAsync(EntityKind kind, Guid id, CancellationToken cancellationToken = default);

@@ -70,7 +70,7 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
                 if (integrity != "ok") throw new SyncException("corruptState", "Состояние папки повреждено. Данные не изменены; восстановите state.db из копии.");
                 if (needsRecovery) await ExecuteAsync(connection, "INSERT OR REPLACE INTO flags(name,value) VALUES('recovery','1')", cancellationToken);
                 var recovery = Convert.ToString(await ScalarAsync(connection, "SELECT value FROM flags WHERE name='recovery'", cancellationToken)) == "1";
-                var session = new Session(root, lease, connection, recovery, beforeReplace, afterReplace, onDocumentRead, afterRepairIntentResolution);
+                var session = new Session(root, lease, connection, recovery, beforeReplace, afterReplace, onDocumentRead, afterRepairIntentResolution, account.Key);
                 try { await session.LoadAsync(cancellationToken); }
                 catch { await session.DisposeAsync(); throw; }
                 return session;
@@ -253,9 +253,12 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
     private static async Task ExecuteAsync(SqliteConnection db, string sql, CancellationToken token)
     { ValidateControlPaths(Path.GetDirectoryName(Path.GetDirectoryName(db.DataSource))!); using var command = db.CreateCommand(); command.CommandText = sql; await command.ExecuteNonQueryAsync(token); }
 
-    private sealed class Session(string root, FileStream lease, SqliteConnection db, bool recovery, Action<string>? beforeReplace, Action<string>? afterReplace, Action<string>? onDocumentRead, Action? afterRepairIntentResolution) : IWorkspaceSession
+    private sealed class Session(string root, FileStream lease, SqliteConnection db, bool recovery, Action<string>? beforeReplace, Action<string>? afterReplace, Action<string>? onDocumentRead, Action? afterRepairIntentResolution, string accountKey) : IWorkspaceSession
     {
         public string Root { get; } = root;
+        public string? BindingHash { get; private set; }
+        public bool HasRecoveryFlag => recovery;
+        private FileStream? bindingGuard;
         public WorkspaceView View { get; private set; } = null!;
         private readonly Dictionary<Guid, EntityState> _states = [];
         private readonly Dictionary<EntityKind, IdentityIndex> _indexes = [];
@@ -281,6 +284,13 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
         public async Task LoadAsync(CancellationToken token)
         {
             ValidateControlPaths(Root);
+            var manifestPath = Path.Combine(Root, ".contactmirror", "workspace.json");
+            bindingGuard = new FileStream(manifestPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var manifestBytes = await ReadBoundedBytesAsync(Root, manifestPath, 16 * 1024 * 1024, token);
+            var binding = JsonSemantics.ParseObject(manifestBytes, "workspace.json");
+            if (binding["schemaVersion"]?.ToString() != "1" || binding["accountKey"]?.ToString() != accountKey || !Guid.TryParse(binding["workspaceId"]?.ToString(), out var workspaceId) || workspaceId == Guid.Empty)
+                throw new SyncException("invalidWorkspace", "Идентификатор папки повреждён. Восстановите workspace.json из копии.");
+            BindingHash = JsonSemantics.Hash(manifestBytes);
             if (OperatingSystem.IsWindows())
             { try { _photoJournal = new(Path.Combine(Root, "photos")); } catch (System.ComponentModel.Win32Exception) { } }
             using (var command = db.CreateCommand())
@@ -726,6 +736,7 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
         }
         public async ValueTask DisposeAsync()
         {
+            if (bindingGuard is not null) await bindingGuard.DisposeAsync();
             foreach (var index in _indexes.Values) index.Dispose();
             _photoJournal?.Dispose();
             foreach (var photo in _photoLeases.Values) photo?.Dispose();

@@ -19,6 +19,7 @@ public sealed partial class ContactsView
     private bool IsNarrow => (TopLevel.GetTopLevel(this)?.Bounds.Width ?? Bounds.Width) < 900;
     private void RebuildCard()
     {
+        var restoreViewport = RestoreViewport();
         draftIndicator = null; contactTitle = null; hiddenSelectionNote = null;
         var body = new Grid { RowDefinitions = new("Auto,*,Auto") };
         var header = new StackPanel { Spacing = 8, Margin = new(16, 12) };
@@ -55,9 +56,9 @@ public sealed partial class ContactsView
             footer.Children.Add(Note(vm.ReadOnlyReason.Length>0?"Контакт доступен только для просмотра":"Изменения сохраняются в папку"));
             if (vm.Status.StartsWith("Сохранено в папку", StringComparison.Ordinal)) footer.Children.Add(Button("Синхронизация", "ContactSavedSyncButton", () => FindById("SyncNavigationButton")?.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent))));
         }
-        foreach (var control in footer.Children) control.Margin = new(0, 0, 8, 4); bottom.Children.Add(footer); Grid.SetRow(bottom, 2); body.Children.Add(bottom); card.Child = body; LayoutPanes();
+        foreach (var control in footer.Children) control.Margin = new(0, 0, 8, 4); bottom.Children.Add(footer); Grid.SetRow(bottom, 2); body.Children.Add(bottom); card.Child = body; LayoutPanes(); restoreViewport();
     }
-    private void RebuildFields() { if (fieldScroll is not null) fieldScroll.Content = ContactCardControls.Build(vm, Actions(), false); }
+    private void RebuildFields() { if (fieldScroll is not null) { var restore = RestoreViewport(); fieldScroll.Content = ContactCardControls.Build(vm, Actions(), false); restore(); } }
     private void LayoutPanes()
     {
         var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Control;
@@ -88,7 +89,7 @@ public sealed partial class ContactsView
         var add = path.StartsWith("add:", StringComparison.Ordinal);
         var targetPath = add ? path[4..] : path;
         var revealPath = add && targetPath.StartsWith("data.", StringComparison.Ordinal) ? targetPath + ".0" : targetPath;
-        revealedField = revealPath; RebuildFields();
+        revealedField = revealPath; navigationRebuild = true; try { RebuildFields(); } finally { navigationRebuild = false; }
         var document = vm.Document;
         var parts = targetPath.Split('.');
         var lists = new List<(string Id, int Index)>();

@@ -28,13 +28,13 @@ public static partial class ContactCardControls
         ("Заметки и интересы",["biographies","interests","miscKeywords"]),
         ("Дополнительные сведения",["relations","locales","externalIds","clientData","userDefined"])
     ];
-    public static Control Build(ContactsViewModel vm, ContactCardActions? actions = null, bool includeIdentity = true) => new CardBuilder(vm, actions, includeIdentity).Build();
+    public static Control Build(ContactsViewModel vm, ContactCardActions? actions = null, bool includeIdentity = true, string? sectionOnly = null) => new CardBuilder(vm, actions, includeIdentity, sectionOnly).Build();
     public static Control BuildIdentity(ContactsViewModel vm, ContactCardActions actions) => new CardBuilder(vm, actions, false).Identity();
     private sealed record RowRef(int Index, IReadOnlyList<object> Path);
     private sealed record JsonTypeOption(string Type, string Title);
     private static readonly JsonTypeOption[] JsonTypes = [new("string", "Текст"), new("number", "Число"), new("boolean", "Да / нет"), new("object", "Объект"), new("array", "Список"), new("null", "Пустое значение (null)")];
 
-    private sealed partial class CardBuilder(ContactsViewModel vm, ContactCardActions? actions, bool includeIdentity)
+    private sealed partial class CardBuilder(ContactsViewModel vm, ContactCardActions? actions, bool includeIdentity, string? sectionOnly = null)
     {
         private readonly JsonObject? captured = vm.Document;
         private bool retired;

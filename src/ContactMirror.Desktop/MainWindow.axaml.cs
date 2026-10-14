@@ -17,6 +17,25 @@ namespace ContactMirror.Desktop;
 public sealed partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
+    private Contacts.SyncChangeEditor? syncEditor;
+    private void OpenSyncChangeMenu(object? sender, RoutedEventArgs args)
+    {
+        if (sender is not Button { Tag: EntryViewModel entry } button || !_viewModel.CanConfigure) return;
+        _viewModel.SelectedEntry = entry;
+        var menu = new ContextMenu();
+        var edit = new MenuItem { Header = "Изменить в папке…" };
+        AutomationProperties.SetAutomationId(edit, "SyncChangeEdit"); edit.Click += async (_, _) => await OpenSyncEditor(false);
+        var reset = new MenuItem { Header = "Сбросить раздел до Google…" };
+        AutomationProperties.SetAutomationId(reset, "SyncChangeReset"); reset.Click += async (_, _) => await OpenSyncEditor(true);
+        menu.Items.Add(edit); menu.Items.Add(reset); button.ContextMenu = menu; menu.Open(button);
+    }
+    private async Task OpenSyncEditor(bool reset)
+    {
+        var edit = await _viewModel.OpenSyncEditorAsync(); if (edit is null) return;
+        void Close() { syncEditor?.Dispose(); syncEditor = null; this.FindControl<ContentControl>("SyncEditHost")!.Content = null; _viewModel.CloseSyncEditor(); }
+        syncEditor = new(_viewModel, edit, Close); this.FindControl<ContentControl>("SyncEditHost")!.Content = syncEditor;
+        if (reset) Dispatcher.UIThread.Post(() => syncEditor?.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => AutomationProperties.GetAutomationId(b) == "SyncEditReset")?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+    }
     public MainWindow() : this(App.CreateViewModel()) { }
     public MainWindow(MainWindowViewModel viewModel)
     {
@@ -53,6 +72,7 @@ public sealed partial class MainWindow : Window
         {
             if (closeAccepted) return;
             args.Cancel = true;
+            if (syncEditor is not null) { syncEditor.RequestClose(); return; }
             if (closePending || viewModel.Contacts.HasModal) return;
             closePending = true;
             if (!await viewModel.Contacts.ResolveDraftAsync()) { closePending = false; return; }
@@ -77,6 +97,7 @@ public sealed partial class MainWindow : Window
     private void FocusById(string id) => this.GetVisualDescendants().OfType<Control>().FirstOrDefault(c => AutomationProperties.GetAutomationId(c) == id)?.Focus();
     private void HandleWorkspaceKey(object? sender, KeyEventArgs args)
     {
+        if (_viewModel.LocalEditorOpen && args.Key == Key.Escape) { syncEditor?.RequestClose(); args.Handled = true; return; }
         if (_viewModel.ShowContactsPage) return;
         if (args.Key == Key.Escape)
         {

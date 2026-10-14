@@ -13,6 +13,8 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
     {
         public required WorkspaceView View { get; init; }
         public required SyncPreview Preview { get; set; }
+        public string? BindingHash { get; init; }
+        public Dictionary<string, LocalEditEntry> LocalEditEntries { get; } = [];
         public Dictionary<Guid, JsonObject> People { get; } = [];
         public Dictionary<Guid, JsonObject> Groups { get; } = [];
         public Dictionary<string, Guid> GroupIds { get; } = new(StringComparer.Ordinal);
@@ -33,12 +35,17 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
         try
         {
             progress?.Report(new("Проверяем папку и состояние…"));
+            for (var pass = 0; pass < 2; pass++)
+            {
             await using var session = await store.OpenAsync(root, account, cancellationToken);
+            if (pass == 0 && await RecoverLocalEditsAsync(session, cancellationToken)) continue;
             var remote = await gateway.ReadAllAsync(progress, cancellationToken);
             var p = await BuildAsync(session, account, remote, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             _plans.Clear(); _plans.Add(p.Preview.PlanId, p);
             return p.Preview;
+            }
+            throw new SyncException("localRecovery", "Локальная запись требует повторной проверки.");
         }
         finally { _mutex.Release(); }
     }
@@ -50,7 +57,7 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
         var notices = view.Issues.Select(i => $"{Path.GetFileName(i.Path)}: {i.Message}").ToList();
         if (view.IsRecovery) notices.Add("Восстановление состояния: проверьте связи с Google. Удаления отключены до согласования папки.");
         if (view.Pending.Count > 0) notices.Add("Есть незавершённые операции. Их результат будет проверен до повторной записи.");
-        var p = new Prepared { View = view, Preview = new() { Root = session.Root, Account = account, Entries = [] } };
+        var p = new Prepared { View = view, BindingHash = session.BindingHash, Preview = new() { Root = session.Root, Account = account, Entries = [] } };
         foreach (var pendingPhoto in view.Pending.Where(o => o.Field == "photo" && o.IntentPhoto is not null)) p.RestoredPhotos[pendingPhoto.EntityId] = pendingPhoto.IntentPhoto;
         var states = view.States;
         foreach (var (id, state) in states) p.WorkingStates[id] = state;
@@ -142,13 +149,19 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
         }
         foreach (var pending in view.Pending.DistinctBy(o => (o.EntityId, o.Field)))
         {
-            if (pending.Field == RepairField) continue; // Local repair must never enter the remote journal reconciliation path.
+            if (pending.Field is RepairField or LocalEditField) continue; // Local operations must never enter remote journal reconciliation.
             var local = pending.Kind == EntityKind.Contact ? view.Contacts.GetValueOrDefault(pending.EntityId) : view.Groups.GetValueOrDefault(pending.EntityId);
             var currentRemote = pending.Kind == EntityKind.Contact ? p.People.GetValueOrDefault(pending.EntityId) : p.Groups.GetValueOrDefault(pending.EntityId);
             if (local is null || currentRemote is null || entries.Any(e => e.EntityId == pending.EntityId && (e.Field == pending.Field || e.Kind == ChangeKind.Blocked))) continue;
             entries.Add(EntityEntry(pending.EntityId, pending.Kind, "Сверить незавершённую операцию", ChangeKind.Reconcile, local.Document, currentRemote, "Текущее состояние будет повторно проверено, после чего завершится только этот пункт журнала.", "$journal:" + pending.Field));
         }
         var candidates = entries.Where(e => e.Field.StartsWith("$relink:", StringComparison.Ordinal)).Select(e => e.Field[8..]).ToHashSet(StringComparer.Ordinal);
+        foreach (var pendingLocal in view.Pending.Where(o => o.Field == LocalEditField).DistinctBy(o => (o.Kind, o.EntityId)))
+        {
+            entries.RemoveAll(e => e.EntityId == pendingLocal.EntityId && e.Entity == pendingLocal.Kind);
+            entries.Add(EntityEntry(pendingLocal.EntityId, pendingLocal.Kind, "Проверить локальное сохранение", ChangeKind.Blocked, pendingLocal.Payload?["document"], null,
+                "Результат локальной записи не подтверждён. Сравните файл с резервной копией в истории и повторите проверку; отправка этой записи в Google заблокирована."));
+        }
         for (var index = 0; index < entries.Count; index++)
         {
             var entry = entries[index];
@@ -161,6 +174,10 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
             entries.Add(new() { Key = $"issue:{Guid.NewGuid()}", EntityId = id, Entity = EntityKind.Contact, Name = Path.GetFileName(issue.Path), Field = "$file", Kind = ChangeKind.Blocked, Explanation = issue.Message });
         }
         p.Preview = new() { Root = session.Root, Account = account, Entries = entries.Select(e => EnhanceEntry(p, e)).ToArray(), Notices = notices, ContactCount = p.People.Count, GroupCount = p.Groups.Count, IsRecovery = view.IsRecovery || view.Pending.Count > 0 };
+        foreach (var group in entries.GroupBy(e => e.Key).Where(group => group.Count() == 1))
+        {
+            var e = group.Single(); p.LocalEditEntries.Add(e.Key, new(e.Key, e.EntityId, e.Entity, e.Field, e.Kind, e.Name));
+        }
         token.ThrowIfCancellationRequested();
         return p;
     }

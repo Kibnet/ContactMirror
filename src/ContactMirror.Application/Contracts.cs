@@ -35,6 +35,10 @@ public interface IGoogleContactsGateway
 
 public interface ISyncCoordinator
 {
+    Task<Contacts.SyncLocalEdit> OpenLocalEditAsync(SyncPreview preview, string entryKey, CancellationToken token = default) => throw new NotSupportedException("Редактирование недоступно в этом провайдере.");
+    Task<Contacts.SyncLocalEditResult> SaveLocalEditAsync(Contacts.SyncLocalEdit edit, JsonObject document, Contacts.ContactPhotoEdit photo, CancellationToken token = default) => throw new NotSupportedException();
+    Task DeleteLocalEditAsync(Contacts.SyncLocalEdit edit, CancellationToken token = default) => throw new NotSupportedException();
+    Task SaveLocalLabelDependenciesAsync(Contacts.SyncLocalEdit edit, CancellationToken token = default) => throw new NotSupportedException();
     Task<SyncRunResult> RepairGoogleSnapshotAsync(SyncPreview preview, string entryKey, IProgress<SyncProgress>? progress = null, CancellationToken cancellationToken = default) => throw new NotSupportedException("Исправление служебной копии недоступно в этом провайдере.");
     Task<SyncPreview> PrepareAsync(string root, AccountIdentity account, IProgress<SyncProgress>? progress = null, CancellationToken cancellationToken = default);
     Task<SyncRunResult> ApplyAsync(SyncPreview preview, IReadOnlyList<PlanChoice> choices, IProgress<SyncProgress>? progress = null, CancellationToken cancellationToken = default);

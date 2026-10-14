@@ -490,6 +490,7 @@ public sealed partial class CoordinatorTests
     {
         public int BulkContacts { get; set; }
         public bool DriftBulkRead { get; set; }
+        public bool NoGroups { get; set; }
         public bool RejectReads { get; set; }
         public bool RejectWrites { get; set; }
         public bool FailPhoto { get; set; }
@@ -528,7 +529,7 @@ public sealed partial class CoordinatorTests
                     ["etag"] = "one",
                     ["metadata"] = new JsonObject { ["sources"] = new JsonArray(new JsonObject { ["type"] = "CONTACT", ["id"] = "bulk" + i, ["etag"] = "one" }) },
                     ["names"] = new JsonArray(new JsonObject { ["givenName"] = DriftBulkRead && CatalogReads > 1 && i == 0 ? "Changed" : "Contact " + i })
-                }).ToArray(), r.Groups);
+                }).ToArray(), NoGroups ? [] : r.Groups);
             return new(r.People.Select(x => Patch(x)!).ToArray(), r.Groups);
         }
         public async Task<JsonObject?> GetPersonAsync(string r, CancellationToken c = default) { if (RejectReads) throw new Xunit.Sdk.XunitException("Export must not reread Google."); PersonReads++; return Patch(await inner.GetPersonAsync(r, c)); }
@@ -552,6 +553,8 @@ public sealed partial class CoordinatorTests
         public Task<string> CreateContactFileAsync(string r, CancellationToken c = default) => inner.CreateContactFileAsync(r, c);
         private sealed class FailSession(IWorkspaceSession inner, bool failState, bool failResolve, int failWrite) : IWorkspaceSession
         {
+            public string? BindingHash => inner.BindingHash;
+            public bool HasRecoveryFlag => inner.HasRecoveryFlag;
             public string Root => inner.Root; public WorkspaceView View => inner.View;
             public ValueTask DisposeAsync() => inner.DisposeAsync();
             public Task<LocalEntity?> ReadLocalAsync(EntityKind k, Guid id, CancellationToken c = default) => inner.ReadLocalAsync(k, id, c);

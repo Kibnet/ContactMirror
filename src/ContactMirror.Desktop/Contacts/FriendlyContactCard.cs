@@ -35,10 +35,11 @@ public static partial class ContactCardControls
             localRoot.DetachedFromVisualTree += (_, _) => retired = true;
             if (captured is null) { panel.Children.Add(Text("Выберите контакт в таблице.")); return localRoot; }
             if (includeIdentity) panel.Children.Add(Identity());
-            panel.Children.Add(FriendlyLabels());
+            if (sectionOnly is null or "$entity" or "labels") panel.Children.Add(FriendlyLabels());
             foreach (var section in Sections)
             {
                 var fields = section.Fields.Select(name => ContactFieldSchema.Fields.Single(f => f.Name == name))
+                    .Where(f => sectionOnly is null or "$entity" || f.Name == sectionOnly)
                     .Where(f => vm.IsEditing
                         ? vm.ShowAllFields || actions?.RevealedPath?.StartsWith("data." + f.Name + ".", StringComparison.Ordinal) == true || Common.Contains(f.Name) || captured["data"]?[f.Name] is JsonArray { Count: > 0 }
                         : f.Name != "names" && captured["data"]?[f.Name] is JsonArray { Count: > 0 } || actions?.RevealedPath?.StartsWith("data." + f.Name + ".", StringComparison.Ordinal) == true).ToArray();
@@ -46,13 +47,14 @@ public static partial class ContactCardControls
                 if (!(vm.IsEditing && fields.Length == 1 && fields[0].Name == "names")) { var title = Text(section.Title); title.FontSize = 16; title.FontWeight = FontWeight.SemiBold; title.Margin = new(0, 8, 0, 0); panel.Children.Add(title); }
                 foreach (var field in fields) panel.Children.Add(Category(field, captured["data"]?[field.Name] as JsonArray));
             }
-            if (vm.IsEditing) panel.Children.Add(Button("Добавить поле…", "ContactAddFieldButton", () => actions?.FindField("+")));
-            if (vm.ShowAllFields || captured["extensions"] is JsonObject { Count: > 0 })
+            if (vm.IsEditing && sectionOnly is null) panel.Children.Add(Button("Добавить поле…", "ContactAddFieldButton", () => actions?.FindField("+")));
+            if (sectionOnly is null && (vm.ShowAllFields || captured["extensions"] is JsonObject { Count: > 0 }))
             {
                 var extra=new Expander{Header="Локальные дополнительные данные",IsExpanded=vm.ShowAllFields||actions?.RevealedPath is "extensions"||actions?.RevealedPath?.StartsWith("extensions.",StringComparison.Ordinal)==true};
                 Identify(extra, "ContactExtensions", "Локальные дополнительные данные");
                 Lazy(extra, () => ExtensionNode(["extensions"], "Дополнительные данные", false)); panel.Children.Add(extra);
             }
+            if (sectionOnly is not null) return localRoot;
             var service = new Expander { Header = "Служебные сведения Google", IsExpanded = vm.ShowAllFields || actions?.RevealedPath == "google" };
             Identify(service, "ContactReadonlyGoogle", "Служебные сведения Google, только просмотр");
             Lazy(service, () => { var body = new StackPanel { Spacing = 8 }; body.Children.Add(ReadonlyNode(captured["id"], "Идентификатор контакта")); body.Children.Add(ReadonlyNode(captured["google"], "Google")); return body; }); panel.Children.Add(service);
@@ -142,13 +144,14 @@ public static partial class ContactCardControls
                 {
                     var grid = new Grid { ColumnDefinitions = new("*,8,32"), MinHeight = 40 };
                     var text = new SelectableTextBlock { Text = ContactValuePresenter.Format(Read(row.Path), field.Name), FontSize = 14, TextWrapping = TextWrapping.Wrap }; Identify(text, "View:" + PathText(row.Path), ContactPresentationCatalog.Title(field.Name)); grid.Children.Add(text);
+                    CardRows.Mark(grid, Read(row.Path), PathText(row.Path));
                     var menu = Button("⋮", "RowMenu:" + field.Name + ":" + row.Index, () => Popup(PathText(row.Path), (token, close) =>
                     {
                         var items = new StackPanel { Spacing = 8 }; items.Children.Add(Button("Копировать", "Copy:" + PathText(row.Path), async () => { var clipboard = TopLevel.GetTopLevel(grid)?.Clipboard; if (clipboard is not null) { var entry = Read(row.Path); var text = (entry?["value"] ?? entry?["url"] ?? entry?["person"])?.ToString() ?? ContactValuePresenter.Format(entry, field.Name); var data = new DataTransfer(); data.Add(DataTransferItem.CreateText(text)); await clipboard.SetDataAsync(data); } close(); }));
                         if (vm.ReadOnlyReason.Length==0&&!vm.IsBusy&&!vm.IsActivityBusy) items.Children.Add(Button("Редактировать это поле", "EditRow:" + field.Name + ":" + row.Index, () => { close(); var path = PathText(row.Path) + "." + (field.Children.FirstOrDefault(c => c.Name is "value" or "person" or "name" or "url")?.Name ?? field.Children.First().Name); actions?.EditField(path); })); return items;
                     })); menu.MinWidth = 32; menu.MinHeight = 32; AutomationProperties.SetName(menu, "Действия для " + ContactPresentationCatalog.Title(field.Name).ToLowerInvariant()); Grid.SetColumn(menu, 2); grid.Children.Add(menu); return grid;
                 }
-                if (rows.Length > 5) panel.Children.Add(VirtualRows(rows, ViewRow, "Rows:" + field.Name)); else foreach (var row in rows) panel.Children.Add(ViewRow(row));
+                    if (rows.Length > 5) panel.Children.Add(VirtualRows(rows, ViewRow, "Rows:" + field.Name)); else foreach (var row in rows) panel.Children.Add(ViewRow(row));
                 if (rows.Length == 0) { panel.Children.Add(Text(field.Title + ": не заполнено")); panel.Children.Add(Button("Заполнить поле", "EditMissing:" + field.Name, () => actions?.EditField(actions.RevealedPath ?? "data." + field.Name + ".0." + field.Children.First(c => c.Name != "metadata").Name))); }
                 if (rows.Length > 0 && (field.Name is not ("phoneNumbers" or "emailAddresses") || actions?.RevealedPath?.StartsWith("data." + field.Name + ".", StringComparison.Ordinal) == true))
                 {
@@ -162,12 +165,15 @@ public static partial class ContactCardControls
             if (count > 5) panel.Children.Add(VirtualRows(entries, row => SchemaRow(field, row), "Rows:" + field.Name)); else foreach (var row in entries) panel.Children.Add(SchemaRow(field, row));
             if (count == 0 && field.Name is "names" or "phoneNumbers" or "emailAddresses") panel.Children.Add(PlaceholderRow(field));
             else if (count == 0 && actions?.RevealedPath?.StartsWith("data." + field.Name + ".", StringComparison.Ordinal) == true) panel.Children.Add(SchemaRow(field, new RowRef(0, ["data", field.Name, 0])));
-            var add = Button("+ " + (field.Name == "phoneNumbers" ? "Телефон" : field.Name == "emailAddresses" ? "Электронная почта" : field.Title), "AddField:" + field.Name, () => Change(doc =>
+            var add = Button("+ " + (field.Name == "phoneNumbers" ? "Телефон" : field.Name == "emailAddresses" ? "Электронная почта" : field.Title), "AddField:" + field.Name, () =>
             {
+                var index = (Read(new object[] { "data", field.Name }) as JsonArray)?.Count ?? 0;
+                if (Change(doc => {
                 var data = doc["data"] as JsonObject ?? new JsonObject(); if (doc["data"] is null) doc["data"] = data;
                 var array = data[field.Name] as JsonArray ?? new JsonArray(); if (data[field.Name] is null) data[field.Name] = array;
                 if (!field.IsSingleton || array.Count == 0) array.Add(new JsonObject());
-            }, true, field.Path)); add.IsEnabled = Editable && (!field.IsSingleton || count == 0); panel.Children.Add(add); return panel;
+                }, true, field.Path)) actions?.EditField("data." + field.Name + "." + index + "." + field.Children.Where(c => c.Name != "metadata").OrderBy(c => FieldPriority(c.Name)).First().Name);
+            }); add.IsEnabled = Editable && (!field.IsSingleton || count == 0); panel.Children.Add(add); return panel;
         }
         private Control ViewField(ContactFieldDescriptor field, IReadOnlyList<object> path, string category)
         {
@@ -187,6 +193,7 @@ public static partial class ContactCardControls
         private Control SchemaRow(ContactFieldDescriptor category, RowRef row)
         {
             var panel = new StackPanel { Spacing = 8, Margin = new(0, 0, 0, 8) };
+            CardRows.Mark(panel, Read(row.Path), PathText(row.Path));
             var children = category.Children.Where(c => c.Name != "metadata").OrderBy(c => FieldPriority(c.Name)).ToArray();
             var main = children.Where(c => IsMain(category.Name, c.Name)).ToArray();
             var mainGrid = Pairs(main.Select(c => SchemaField(c, Append(row.Path, c.Name), category.Name)).ToArray(), category.Name is "names" or "phoneNumbers" or "emailAddresses"); var rowBody = new Grid { ColumnDefinitions = new("*,6,32") }; rowBody.Children.Add(mainGrid); panel.Children.Add(rowBody);
