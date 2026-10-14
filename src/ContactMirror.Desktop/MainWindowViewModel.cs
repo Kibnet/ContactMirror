@@ -55,7 +55,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         set
         {
             if (_folder == value) return;
-            if (Contacts.IsDirty || Contacts.IsBusy || Contacts.HasModal || _activity.IsApplying) { Error = "Закройте диалог, сохраните или отмените правки контакта перед сменой папки."; OnPropertyChanged(); return; }
+            if (LocalEditorOpen || Contacts.IsDirty || Contacts.IsBusy || Contacts.HasModal || _activity.IsApplying) { Error = "Закройте диалог, сохраните или отмените правки контакта перед сменой папки."; OnPropertyChanged(); return; }
             if (SetProperty(ref _folder, value)) { OnFolderChanged(value); FolderInput = value; }
         }
     }
@@ -96,7 +96,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private double _settingsPanelHeight = 170;
     [ObservableProperty] private double _workspaceHeaderHeight = 300;
     public bool IsDemo { get; }
-    public bool CanConfigure => !IsBusy && !_activity.IsActive && !_activity.IsApplying && !_closeRequested && !ShowDeleteConfirmation && !ShowBackupDeleteConfirmation && !Contacts.IsBusy && !Contacts.HasModal;
+    public bool CanConfigure => !LocalEditorOpen && !IsBusy && !_activity.IsActive && !_activity.IsApplying && !_closeRequested && !ShowDeleteConfirmation && !ShowBackupDeleteConfirmation && !Contacts.IsBusy && !Contacts.HasModal;
     public bool CanOverrideOAuth => CanConfigure && !ContactMirror.Infrastructure.Configuration.ApplicationPaths.IsValidation && !IsDemo;
     public UpdatesViewModel Updates { get; }
     public bool IsOnboarding => !IsConnected || !FolderReady;
@@ -526,6 +526,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
     private void RefreshCommands()
     {
+        OnPropertyChanged(nameof(CanEditEntry));
         OnPropertyChanged(nameof(CanCheck)); OnPropertyChanged(nameof(CanApply));
         OnPropertyChanged(nameof(CanDisconnect));
         OnPropertyChanged(nameof(CanConfigure)); OnPropertyChanged(nameof(CanOverrideOAuth));
@@ -556,6 +557,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
 public sealed partial class EntryViewModel(SyncEntry entry) : ObservableObject
 {
+    public bool CanEditLocal => Entry.Kind is not (ChangeKind.Blocked or ChangeKind.Reconcile or ChangeKind.Snapshot) && (Entry.Field == "$entity" || !Entry.Field.StartsWith('$'));
+    public string EditActionId => "SyncChangeActions:" + Entry.Key;
     public SyncEntry Entry { get; } = entry;
     [ObservableProperty] private bool _isSelected = entry.DefaultSelected;
     [ObservableProperty] private Resolution _resolution = Resolution.Automatic;

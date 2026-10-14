@@ -93,10 +93,11 @@
                     </Grid>
                     <ListBox Grid.Row="1" ItemsSource="{Binding FieldEntries}" SelectedItem="{Binding SelectedEntry}" IsEnabled="{Binding HasPreview}" MaxHeight="92" Margin="0,8" Background="Transparent" BorderThickness="0" AutomationProperties.AutomationId="FieldChoices">
                       <ListBox.ItemTemplate><DataTemplate x:DataType="vm:EntryViewModel">
-                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,2">
                           <CheckBox IsChecked="{Binding IsSelected}" IsEnabled="{Binding Entry.IsSelectable}" AutomationProperties.AutomationId="{Binding Entry.Key}" AutomationProperties.Name="{Binding FieldLabel}"/>
                           <TextBlock Grid.Column="1" Text="{Binding FieldLabel}" VerticalAlignment="Center"/>
                           <TextBlock Grid.Column="2" Text="{Binding Direction}" Classes="caption" FontSize="12" VerticalAlignment="Center" Margin="8,0"/>
+                          <Button Grid.Column="3" Content="⋮" Click="OpenSyncChangeMenu" Tag="{Binding}" IsEnabled="{Binding $parent[Window].DataContext.CanConfigure}" IsVisible="{Binding CanEditLocal}" AutomationProperties.AutomationId="{Binding EditActionId}" AutomationProperties.Name="Действия с изменением в папке" Margin="8,0,0,0" MinHeight="28"/>
                         </Grid>
                       </DataTemplate></ListBox.ItemTemplate>
                     </ListBox>
@@ -232,6 +233,9 @@
             <WrapPanel><Button Content="Удалить выбранные записи" Classes="danger" Command="{Binding ConfirmDeletesCommand}" AutomationProperties.AutomationId="ConfirmDeletesButton" Margin="0,0,8,0"/><Button Content="Вернуться к плану" Command="{Binding DismissDeletesCommand}" AutomationProperties.AutomationId="DismissDeletesButton"/></WrapPanel>
           </StackPanel>
         </Border>
+      </Border>
+      <Border x:Name="SyncEditOverlay" IsVisible="{Binding LocalEditorOpen}" Background="#99000000" Padding="20">
+        <Border Classes="card" MaxWidth="850" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Padding="20"><ContentControl x:Name="SyncEditHost"/></Border>
       </Border>
       <Border IsVisible="{Binding ShowBackupDeleteConfirmation}" Background="#99000000" Padding="28">
         <Border Classes="card" MaxWidth="600" HorizontalAlignment="Center" VerticalAlignment="Center"><StackPanel Spacing="14"><TextBlock Text="Удалить резервную копию?" FontSize="24" FontWeight="SemiBold"/><TextBlock Text="{Binding BackupDeleteWarning}" TextWrapping="Wrap"/><WrapPanel><Button Content="Удалить копию без восстановления" Classes="danger" Command="{Binding ConfirmBackupDeleteCommand}" AutomationProperties.AutomationId="ConfirmCleanupBackupButton" Margin="0,0,8,0"/><Button Content="Сохранить копию" Command="{Binding DismissBackupDeleteCommand}" AutomationProperties.AutomationId="DismissBackupDeleteButton"/></WrapPanel></StackPanel></Border>

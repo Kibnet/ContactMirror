@@ -35,10 +35,11 @@ public static partial class ContactCardControls
             localRoot.DetachedFromVisualTree += (_, _) => retired = true;
             if (captured is null) { panel.Children.Add(Text("Выберите контакт в таблице.")); return localRoot; }
             if (includeIdentity) panel.Children.Add(Identity());
-            panel.Children.Add(FriendlyLabels());
+            if (sectionOnly is null or "$entity" or "labels") panel.Children.Add(FriendlyLabels());
             foreach (var section in Sections)
             {
                 var fields = section.Fields.Select(name => ContactFieldSchema.Fields.Single(f => f.Name == name))
+                    .Where(f => sectionOnly is null or "$entity" || f.Name == sectionOnly)
                     .Where(f => vm.IsEditing
                         ? vm.ShowAllFields || actions?.RevealedPath?.StartsWith("data." + f.Name + ".", StringComparison.Ordinal) == true || Common.Contains(f.Name) || captured["data"]?[f.Name] is JsonArray { Count: > 0 }
                         : f.Name != "names" && captured["data"]?[f.Name] is JsonArray { Count: > 0 } || actions?.RevealedPath?.StartsWith("data." + f.Name + ".", StringComparison.Ordinal) == true).ToArray();
@@ -46,13 +47,14 @@ public static partial class ContactCardControls
                 if (!(vm.IsEditing && fields.Length == 1 && fields[0].Name == "names")) { var title = Text(section.Title); title.FontSize = 16; title.FontWeight = FontWeight.SemiBold; title.Margin = new(0, 8, 0, 0); panel.Children.Add(title); }
                 foreach (var field in fields) panel.Children.Add(Category(field, captured["data"]?[field.Name] as JsonArray));
             }
-            if (vm.IsEditing) panel.Children.Add(Button("Добавить поле…", "ContactAddFieldButton", () => actions?.FindField("+")));
-            if (vm.ShowAllFields || captured["extensions"] is JsonObject { Count: > 0 })
+            if (vm.IsEditing && sectionOnly is null) panel.Children.Add(Button("Добавить поле…", "ContactAddFieldButton", () => actions?.FindField("+")));
+            if (sectionOnly is null && (vm.ShowAllFields || captured["extensions"] is JsonObject { Count: > 0 }))
             {
                 var extra=new Expander{Header="Локальные дополнительные данные",IsExpanded=vm.ShowAllFields||actions?.RevealedPath is "extensions"||actions?.RevealedPath?.StartsWith("extensions.",StringComparison.Ordinal)==true};
                 Identify(extra, "ContactExtensions", "Локальные дополнительные данные");
                 Lazy(extra, () => ExtensionNode(["extensions"], "Дополнительные данные", false)); panel.Children.Add(extra);
             }
+            if (sectionOnly is not null) return localRoot;
             var service = new Expander { Header = "Служебные сведения Google", IsExpanded = vm.ShowAllFields || actions?.RevealedPath == "google" };
             Identify(service, "ContactReadonlyGoogle", "Служебные сведения Google, только просмотр");
             Lazy(service, () => { var body = new StackPanel { Spacing = 8 }; body.Children.Add(ReadonlyNode(captured["id"], "Идентификатор контакта")); body.Children.Add(ReadonlyNode(captured["google"], "Google")); return body; }); panel.Children.Add(service);

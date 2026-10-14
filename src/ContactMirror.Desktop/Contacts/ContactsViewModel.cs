@@ -113,6 +113,37 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     public event Action? TableChanged;
     public event Action<string>? ErrorFocusRequested;
     public void RefreshStructure() => StructureChanged?.Invoke();
+    internal ContactPhotoEdit DraftPhoto => new(photoEdit.Changed, photoEdit.Bytes?.ToArray());
+    internal void RemapSyncDraft(SyncLocalEdit previous, SyncLocalEdit updated)
+    {
+        if (document is null || original is null) return;
+        // Only the coordinator's refreshed remote identity may remap a never-saved draft.
+        catalog = new(updated.Root, Guid.Empty, [], updated.Labels, []);
+        foreach (var field in CapabilityRegistry.WritableFields)
+            if (JsonNode.DeepEquals(document["data"]?[field], previous.Document["data"]?[field]))
+            {
+                if (updated.Document["data"]!.AsObject().ContainsKey(field)) document["data"]![field] = updated.Document["data"]![field]?.DeepClone();
+                else document["data"]!.AsObject().Remove(field);
+            }
+        var before = DocumentCodec.Contact(previous.Document).Labels.ToHashSet(); var pending = DocumentCodec.Contact(document).Labels.ToHashSet();
+        var labels = DocumentCodec.Contact(updated.Document).Labels.ToHashSet();
+        foreach (var id in before.Union(pending).Where(id => before.Contains(id) != pending.Contains(id)))
+        {
+            var mapped = previous.LabelResources.TryGetValue(id, out var resource) ? updated.LabelResources.FirstOrDefault(pair => pair.Value == resource).Key : id;
+            if (mapped == Guid.Empty) throw new SyncException("groupDependency", "Изменённый ярлык исчез из Google. Проверьте выбор; черновик сохранён.");
+            if (pending.Contains(id)) labels.Add(mapped); else labels.Remove(mapped);
+        }
+        document["id"] = updated.EntityId.ToString(); document["google"] = updated.Document["google"]?.DeepClone();
+        document["labels"] = new JsonArray(labels.Select(id => (JsonNode?)JsonValue.Create(id.ToString())).ToArray());
+        original = original with { Id = updated.EntityId, Document = (JsonObject)updated.Document.DeepClone() };
+        RefreshStructure();
+    }
+    internal void OpenSyncDraft(SyncLocalEdit edit)
+    {
+        catalog = new(edit.Root, Guid.Empty, [], edit.Labels.Concat(edit.MissingLabels).ToDictionary(x => x.Key, x => x.Value), []);
+        SetSnapshot(new(edit.Root, Guid.Empty, edit.EntityId, "", (JsonObject)edit.Document.DeepClone(), null, "sync-draft", edit.PhotoBytes?.ToArray(), edit.PhotoBytes is { } bytes ? JsonSemantics.Hash(bytes) : null));
+        BeginEdit();
+    }
 
     public ContactsViewModel(ContactEditorService service, ApplicationActivity activity, Func<AccountIdentity?> account,
         Action onSaved, bool demo = false, bool persist = true, ContactTablePreferences? preferenceStore = null)
