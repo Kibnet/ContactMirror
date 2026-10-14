@@ -279,14 +279,16 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
                     if (inputValues.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null || string.IsNullOrWhiteSpace(pair.Value.Error)))
                         throw new ArgumentException("Для проблемного ввода нужны путь, значение и сообщение об ошибке.",nameof(inputChange));
                     JsonObject? candidate = null;
+                    Dictionary<JsonNode, JsonNode> origins = new(ReferenceEqualityComparer.Instance);
                     if (confirmedMutation is not null)
                     {
                         candidate = (JsonObject)document!.DeepClone();
+                        RememberOrigins(document, candidate, origins);
                         confirmedMutation(candidate);
                         dataChanged = !JsonNode.DeepEquals(document,candidate);
                     }
                     editorPopup = null; context.Retired = true;
-                    if (dataChanged) ApplyObjectPatch(document!,candidate!);
+                    if (dataChanged) ApplyObjectPatch(document!,candidate!, origins);
                     if (inputChange?.ClearPrefix is { } prefix && !string.IsNullOrWhiteSpace(prefix))
                     {
                         foreach (var key in invalidInputs.Keys.Concat(validationErrors.Keys).Where(key => key == prefix || key.StartsWith(prefix + ".",StringComparison.Ordinal)).Distinct().ToArray())
@@ -318,14 +320,41 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
         if (ReferenceEquals(editorPopup,context)) editorPopup = null;
         context.Retired = true;
     }
-    private static void ApplyObjectPatch(JsonObject current, JsonObject candidate)
+    // Capture correspondence before the guarded mutation, while both trees have identical structure.
+    // This keeps existing row objects through deletes/reorders without matching equal-looking rows.
+    private static void RememberOrigins(JsonNode original, JsonNode clone, Dictionary<JsonNode, JsonNode> origins)
+    {
+        origins.Add(clone, original);
+        if (original is JsonObject obj && clone is JsonObject copy)
+            foreach (var pair in obj) if (pair.Value is { } value && copy[pair.Key] is { } child) RememberOrigins(value, child, origins);
+        if (original is JsonArray array && clone is JsonArray copied)
+            for (var i = 0; i < array.Count; i++) if (array[i] is { } value && copied[i] is { } child) RememberOrigins(value, child, origins);
+    }
+    private static void ApplyObjectPatch(JsonObject current, JsonObject candidate, Dictionary<JsonNode, JsonNode> origins)
     {
         foreach (var key in current.Select(pair => pair.Key).Except(candidate.Select(pair => pair.Key)).ToArray()) current.Remove(key);
         foreach (var pair in candidate)
         {
             if (JsonNode.DeepEquals(current[pair.Key],pair.Value)) continue;
-            if (current[pair.Key] is JsonObject oldObject && pair.Value is JsonObject newObject) ApplyObjectPatch(oldObject,newObject);
+            if (current[pair.Key] is JsonObject oldObject && pair.Value is JsonObject newObject) ApplyObjectPatch(oldObject,newObject, origins);
+            else if (current[pair.Key] is JsonArray oldArray && pair.Value is JsonArray newArray) ApplyArrayPatch(oldArray, newArray, origins);
             else current[pair.Key] = pair.Value?.DeepClone();
+        }
+    }
+    private static void ApplyArrayPatch(JsonArray current, JsonArray candidate, Dictionary<JsonNode, JsonNode> origins)
+    {
+        var existing = current.Where(n => n is not null).ToHashSet(ReferenceEqualityComparer.Instance);
+        current.Clear();
+        foreach (var child in candidate)
+        {
+            if (child is not null && origins.TryGetValue(child, out var original) && existing.Contains(original))
+            {
+                if (original is JsonObject obj && child is JsonObject copy) ApplyObjectPatch(obj, copy, origins);
+                else if (original is JsonArray array && child is JsonArray copied) ApplyArrayPatch(array, copied, origins);
+                else { current.Add(child.DeepClone()); continue; }
+                current.Add(original);
+            }
+            else current.Add(child?.DeepClone());
         }
     }
     public string GetInput(string path, string fallback) => invalidInputs.GetValueOrDefault(path,fallback);
