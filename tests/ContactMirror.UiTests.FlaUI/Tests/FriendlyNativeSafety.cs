@@ -30,7 +30,8 @@ public sealed partial class IntegratedDemoFlaUiTests
         await Assert.That(await File.ReadAllBytesAsync(target.Path)).IsEquivalentTo(before);
         (await FriendlyNativeWait("ContactErrorsButton")).AsButton().Invoke(); await Task.Delay(100); CaptureCheckpoint("friendly-narrow-multiple-errors");
         (await FriendlyNativeWait("ErrorLink:data.birthdays.0.date.day")).AsButton().Invoke(); await Task.Delay(150);
-        var day = (await FriendlyNativeWait("Editor:data.birthdays.0.date.day")).AsTextBox(); await Assert.That(day.Text).IsEqualTo("30"); day.Enter("29");
+        var day = (await FriendlyNativeWait("Editor:data.birthdays.0.date.day")).AsTextBox(); await Assert.That(day.Text).IsEqualTo("30"); day.Text = "29";
+        Page.WaitUntilNameContains(static p => p.ContactsStatus, "Ошибки в полях: 1");
         await FriendlyNativeFind("data.organizations.0.fullTimeEquivalentMillipercent"); var percent = (await FriendlyNativeWait("Editor:data.organizations.0.fullTimeEquivalentMillipercent")).AsTextBox(); await Assert.That(percent.Text).IsEqualTo("ошибка");
         await Assert.That(Page.ContactsStatus.Name.Contains("Ошибки в полях: 1",StringComparison.Ordinal)).IsTrue();
         await Assert.That((await FriendlyNativeWait("ContactDraftStatus")).Name.Contains("Ошибки в полях: 1",StringComparison.Ordinal)).IsTrue();
