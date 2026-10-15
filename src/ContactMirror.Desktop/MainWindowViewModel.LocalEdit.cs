@@ -10,16 +10,18 @@ public sealed partial class MainWindowViewModel
 {
     [ObservableProperty] private bool localEditorOpen;
     private SyncLocalEdit? activeLocalEdit;
-    partial void OnLocalEditorOpenChanged(bool value) => RefreshCommands();
+    partial void OnLocalEditorOpenChanged(bool value) { RefreshCommands(); if(!value && Automation is not null) AutomationChanged(); }
     public bool CanEditEntry => HasPreview && CanConfigure && SelectedEntry is { Entry.Kind: not (ChangeKind.Blocked or ChangeKind.Reconcile or ChangeKind.Snapshot) } entry
         && (entry.Entry.Field == "$entity" || !entry.Entry.Field.StartsWith('$'));
     public async Task<SyncLocalEdit?> OpenSyncEditorAsync()
     {
         if (!CanEditEntry || !await Contacts.ResolveDraftAsync() || _preview is null || SelectedEntry is null) return null;
+        if (!CanEditEntry) return null;
+        var preview = _preview; var key = SelectedEntry.Entry.Key;
         LocalEditorOpen = true;
         try
         {
-            var edit = await Task.Run(() => _sync.OpenLocalEditAsync(_preview, SelectedEntry.Entry.Key));
+            var edit = await Task.Run(() => _sync.OpenLocalEditAsync(preview, key));
             if (_closeRequested) { LocalEditorOpen = false; return null; }
             activeLocalEdit = edit;
             LocalEditorOpen = true; RefreshCommands(); return edit;
@@ -78,6 +80,7 @@ public sealed partial class MainWindowViewModel
         try
         {
             var preview = await Task.Run(() => _sync.PrepareAsync(Folder, _account!)); _preview = preview; LoadPreview(preview);
+            AcknowledgeAgentRefresh();
             RestoreEditChoices(choices, edit);
             SelectedEntry = Entries.FirstOrDefault(e => e.Entry.Key == selected) ?? Entries.FirstOrDefault(e => e.Entry.EntityId == edit.EntityId) ?? Entries.FirstOrDefault();
             UpdateSelection(); Status = "Сохранено в папку. " + (Entries.Any(e => e.Entry.EntityId == edit.EntityId && (e.Entry.Field == edit.Field || edit.Field == "$entity" && e.CanEditLocal)) ? "Сравнение обновлено; отправка в Google — отдельно." : "Значение в папке совпадает с Google.");

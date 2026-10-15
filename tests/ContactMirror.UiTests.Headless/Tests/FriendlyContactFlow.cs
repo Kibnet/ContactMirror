@@ -32,7 +32,9 @@ public sealed partial class IntegratedDemoHeadlessTests
     }
     protected override async Task ReloadFriendlyCardAsync()
     {
-        HeadlessRuntime.Dispatch(()=>((Button)FriendlyControl("ContactActionsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
-        await Task.Delay(50);HeadlessRuntime.Dispatch(()=>((Button)FriendlyControl("ContactReloadButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+        // The saved status precedes the asynchronous catalog refresh; wait until the card accepts actions.
+        await EditorAdapterWait("ContactEditButton");
+        await EditorAdapterClick("ContactActionsButton");
+        await EditorAdapterClick("ContactReloadButton");
     }
 }

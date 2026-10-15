@@ -21,12 +21,15 @@ public sealed partial class MainWindowViewModel
     private bool agentRefreshRequested;
     private bool agentRefreshing;
     private bool automationDetached;
+    private long agentRefreshRevision;
+    private long coveredAgentRefreshRevision;
     public void AttachAutomation(AgentRuntime runtime)
     {
         Automation = runtime; var c = AgentConfiguration.Load();
         McpEnabled = c.Enabled; McpLocalWrite = c.LocalWrite; McpGoogleWrite = c.GoogleWrite; McpRoots = string.Join(Environment.NewLine, c.AllowedRoots);
         var prior = Contacts.Guard.IsTransitionBlocked; Contacts.Guard.IsTransitionBlocked = () => !McpRestartAllowed || prior?.Invoke() == true;
-        Contacts.Guard.TransitionBlockedReason = () => !McpRestartAllowed ? "Перед обновлением завершите MCP-клиенты ContactMirror." : null;
+        var priorReason = Contacts.Guard.TransitionBlockedReason;
+        Contacts.Guard.TransitionBlockedReason = () => !McpRestartAllowed ? "Перед обновлением завершите MCP-клиенты ContactMirror." : priorReason?.Invoke();
         runtime.Changed += AutomationChanged; _activity.Changed += AutomationChanged;
         OnPropertyChanged(nameof(HasMcp)); AutomationChanged();
     }
@@ -34,14 +37,17 @@ public sealed partial class MainWindowViewModel
     {
         if (automationDetached || _closeRequested) return;
         OnPropertyChanged(nameof(McpStatus)); OnPropertyChanged(nameof(McpRestartAllowed));
-        if (!_activity.IsActive && agentRefreshRequested && !agentRefreshing)
+        if (!_activity.IsActive && !LocalEditorOpen && agentRefreshRequested && !agentRefreshing)
         {
             agentRefreshing = true;
             agentRefreshRequested = false;
+            var revision = Interlocked.Read(ref agentRefreshRevision);
             try
             {
                 await ReloadConnectionAsync(CancellationToken.None);
                 if (automationDetached || _closeRequested) return;
+                if (revision <= coveredAgentRefreshRevision) return;
+                if (LocalEditorOpen || _activity.IsActive) { agentRefreshRequested = true; return; }
                 InvalidatePreview();
                 if (!Contacts.IsDirty && !Contacts.HasModal && FolderReady)
                 {
@@ -56,9 +62,15 @@ public sealed partial class MainWindowViewModel
     });
     public void RequestAgentRefresh(string? root)
     {
-        if (root is null || string.Equals(root, Folder, StringComparison.OrdinalIgnoreCase)) agentRefreshRequested = true;
-        AutomationChanged();
+        var revision = Interlocked.Increment(ref agentRefreshRevision);
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (revision <= coveredAgentRefreshRevision) return;
+            if (root is null || string.Equals(root, Folder, StringComparison.OrdinalIgnoreCase)) agentRefreshRequested = true;
+            AutomationChanged();
+        });
     }
+    private void AcknowledgeAgentRefresh() { coveredAgentRefreshRevision = Interlocked.Read(ref agentRefreshRevision); agentRefreshRequested = false; }
     [RelayCommand] private void AddMcpFolder()
     {
         if (!CanConfigure || Contacts.IsDirty || !FolderReady) return;

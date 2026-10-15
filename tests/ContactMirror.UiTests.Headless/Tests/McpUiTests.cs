@@ -40,6 +40,11 @@ public sealed partial class MainWindowHeadlessTests
         async Task<AgentResult> Call(string tool,JsonObject args) => await EditorUi(()=>runtime.CallAsync(new(tool,args,bridge)));
         var workspace = (await Call("workspace_open",new(){["root"]=fixture.Root})).Data!["workspace"]!.ToString();
         var before = await Call("contacts_get",new(){["workspace"]=workspace,["id"]=fixture.Id.ToString()});
+        HeadlessRuntime.Dispatch(()=>model.LocalEditorOpen=true);
+        var modal=await Call("contacts_update",new(){["workspace"]=workspace,["id"]=fixture.Id.ToString(),["expectedVersion"]=before.Data!["version"]!.DeepClone(),["requestKey"]=Guid.NewGuid().ToString(),["patches"]=new JsonArray(new JsonObject{["op"]="replace",["path"]="/data/names/0/givenName",["value"]="Правка агента"})});
+        await Assert.That(modal.Error!.Code).IsEqualTo("ui_modal_busy");
+        var modalState=await EditorUi(()=>runtime.Ui.GetStateAsync());await Assert.That(modalState.Modal).IsTrue();
+        HeadlessRuntime.Dispatch(()=>model.LocalEditorOpen=false);
         HeadlessRuntime.Dispatch(()=>{ model.Contacts.BeginEdit(); model.Contacts.Mutate(d=>d["data"]!["names"]![0]!["givenName"]="Несохранённое имя" ); });
         var blocked = await Call("contacts_update",new(){["workspace"]=workspace,["id"]=fixture.Id.ToString(),["expectedVersion"]=before.Data!["version"]!.DeepClone(),["requestKey"]=Guid.NewGuid().ToString(),["patches"]=new JsonArray(new JsonObject{["op"]="replace",["path"]="/data/names/0/givenName",["value"]="Правка агента"})});
         await Assert.That(blocked.Error!.Code).IsEqualTo("draft_conflict"); var kept=""; HeadlessRuntime.Dispatch(()=>kept=model.Contacts.Document!["data"]!["names"]![0]!["givenName"]!.ToString()); await Assert.That(kept).IsEqualTo("Несохранённое имя"); CaptureCheckpoint("mcp-protected-draft");

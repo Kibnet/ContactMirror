@@ -10,6 +10,36 @@ namespace ContactMirror.McpTests;
 
 public sealed partial class RuntimeTests
 {
+    [Test]
+    public async Task GUI_local_edit_handle_respects_plan_owner_and_actual_plan_expiry()
+    {
+        var clock=new ManualClock();await using var f=new Fixture(clock);await f.InitializeAsync();var contact=await f.Create();SyncPreview preview;ContactMirror.Application.Contacts.SyncLocalEdit edit;
+        using(PlanOrigin.Enter("gui")){preview=await f.Coordinator.PrepareAsync(f.Root,DemoAccountConnector.Identity);edit=await f.Coordinator.OpenLocalEditAsync(preview,preview.Entries.First(e=>e.EntityId==Guid.Parse(Id(contact))&&e.Field=="$entity").Key);}
+        SyncException? denied=null;
+        try {using var origin=PlanOrigin.Enter(f.Bridge);await f.Coordinator.OpenLocalEditAsync(preview,edit.Field=="$entity"?preview.Entries.First(e=>e.EntityId==edit.EntityId).Key:"");}catch(SyncException e){denied=e;}
+        await Assert.That(denied?.Code).IsEqualTo("plan_not_owned");
+        clock.Advance(TimeSpan.FromMinutes(16));SyncException? expired=null;
+        try {using var origin=PlanOrigin.Enter("gui");await f.Coordinator.SaveLocalEditAsync(edit,(JsonObject)edit.Document.DeepClone(),new());}catch(SyncException e){expired=e;}
+        await Assert.That(expired?.Code).IsEqualTo("plan_expired");await Assert.That(f.Coordinator.RetentionBudget.RetainedBytes).IsEqualTo(0L);
+    }
+    [Test]
+    public async Task GUI_sync_edit_invalidates_affected_MCP_plans_and_releases_only_their_budget()
+    {
+        await using var f=new Fixture();await f.InitializeAsync();var contact=await f.Create();var prepared=await Prepare(f);var id=prepared.Data!["planId"]!.ToString();
+        var otherRoot=Path.Combine(f.Temp,"other-workspace");Directory.CreateDirectory(otherRoot);SyncPreview other;
+        using(PlanOrigin.Enter(f.Bridge))other=await f.Coordinator.PrepareAsync(otherRoot,DemoAccountConnector.Identity);
+        using(PlanOrigin.Enter("gui"))
+        {
+            var preview=await f.Coordinator.PrepareAsync(f.Root,DemoAccountConnector.Identity);var entry=preview.Entries.First(e=>e.EntityId==Guid.Parse(Id(contact))&&e.Field=="$entity");
+            var edit=await f.Coordinator.OpenLocalEditAsync(preview,entry.Key);var before=f.Coordinator.RetentionBudget.RetainedBytes;
+            var output=(JsonObject)edit.Document.DeepClone();output["data"]!["names"]![0]!["givenName"]="Правка через сравнение";
+            await f.Coordinator.SaveLocalEditAsync(edit,output,new());await Assert.That(f.Coordinator.RetentionBudget.RetainedBytes<before).IsTrue();
+        }
+        var stale=await f.Call("sync_get_plan",new(){["planId"]=id});await Assert.That(stale.Error!.Code).IsEqualTo("plan_stale");
+        using(PlanOrigin.Enter(f.Bridge))await Assert.That((await f.Coordinator.ReadPreparedPlanAsync(other.PlanId)).PlanId).IsEqualTo(other.PlanId);
+        await Assert.That(Check(await f.Get(Id(contact))).Data!["document"]!["data"]!["names"]![0]!["givenName"]!.ToString()).IsEqualTo("Правка через сравнение");
+        await f.Coordinator.InvalidatePlansAsync();await Assert.That(f.Coordinator.RetentionBudget.RetainedBytes).IsEqualTo(0L);
+    }
     private static readonly byte[] Png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
     private static async Task<string> Upload(Fixture f, byte[] data)
     {

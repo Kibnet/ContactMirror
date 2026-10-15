@@ -38,6 +38,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _activity = activity ?? new();
         Updates = new(updates, _activity);
         Contacts = new(new ContactEditorService(editorStore ?? new ContactMirror.Infrastructure.Contacts.ContactEditorStore(), _activity), _activity, () => _account, () => { InvalidatePreview(); ShowResult = false; if (Automation is not null) _ = Automation.NotifyUserChangeAsync(Folder, _account); }, demo, persist);
+        var priorBlocked = Contacts.Guard.IsTransitionBlocked;
+        Contacts.Guard.IsTransitionBlocked = () => LocalEditorOpen || priorBlocked?.Invoke() == true;
+        Contacts.Guard.TransitionBlockedReason = () => LocalEditorOpen ? "Сохраните или отмените правки в редакторе синхронизации перед перезапуском." : null;
         updates?.SetRestartGuard(Contacts.Guard);
         _contactsMode = editorStore is not null;
         Contacts.PropertyChanged += (_, _) => { RefreshCommands(); NotifyContactsNavigation(); };

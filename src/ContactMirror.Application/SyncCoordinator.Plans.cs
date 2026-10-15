@@ -57,6 +57,7 @@ public sealed partial class SyncCoordinator
     }
     private void ExpirePlan(Guid id, string reason)
     {
+        foreach(var edit in localEdits.Where(pair => pair.Value.Plan.Preview.PlanId == id).Select(pair => pair.Key).ToArray()) localEdits.Remove(edit);
         _plans.Remove(id); planOwners.Remove(id); expiredPlans[id] = (reason, Now + PlanLifetime); PlanInvalidated?.Invoke(id, reason);
         RetentionBudget.Release("plan:" + id);
     }

@@ -462,10 +462,11 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     public bool Mutate(Action<JsonObject> mutation, bool rebuild = false)
     {
         if (!IsEditing || !CanEdit || document is null) return false;
-        var candidate = (JsonObject)document.DeepClone(); mutation(candidate);
+        var candidate = (JsonObject)document.DeepClone();
+        var origins = new Dictionary<JsonNode, JsonNode>(ReferenceEqualityComparer.Instance); RememberOrigins(document,candidate,origins); mutation(candidate);
         try { DocumentCodec.EnsureProtectedCategoriesUnchanged(candidate, original!.Document); }
         catch (SyncException e) when (e.Code == "protectedCategory") { Error = e.Message; return false; }
-        var changed = Guard.TryMutate(() => ApplyObjectPatch(document, candidate));
+        var changed = Guard.TryMutate(() => ApplyObjectPatch(document, candidate, origins));
         if (changed)
         {
             RefreshValidation(); Notify();
