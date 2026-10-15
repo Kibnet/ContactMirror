@@ -37,7 +37,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _persist = persist;
         _activity = activity ?? new();
         Updates = new(updates, _activity);
-        Contacts = new(new ContactEditorService(editorStore ?? new ContactMirror.Infrastructure.Contacts.ContactEditorStore(), _activity), _activity, () => _account, () => { InvalidatePreview(); ShowResult = false; }, demo, persist);
+        Contacts = new(new ContactEditorService(editorStore ?? new ContactMirror.Infrastructure.Contacts.ContactEditorStore(), _activity), _activity, () => _account, () => { InvalidatePreview(); ShowResult = false; if (Automation is not null) _ = Automation.NotifyUserChangeAsync(Folder, _account); }, demo, persist);
         updates?.SetRestartGuard(Contacts.Guard);
         _contactsMode = editorStore is not null;
         Contacts.PropertyChanged += (_, _) => { RefreshCommands(); NotifyContactsNavigation(); };
@@ -233,6 +233,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         Status = "Завершите вход в открывшемся браузере. Пароль приложение не получает.";
         _account = await _accountConnector.SignInAsync(token);
+        if (Automation is not null) await Automation.NotifyUserChangeAsync(null, _account);
         SetAccount();
         Status = "Google подключён. Выберите папку и проверьте изменения.";
     });
@@ -241,6 +242,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         await _accountConnector.SignOutAsync(false, token);
         _account = null;
+        if (Automation is not null) await Automation.NotifyUserChangeAsync(null, null);
         SetAccount();
         InvalidatePreview();
         Status = "Аккаунт отключён. Файлы контактов сохранены.";
@@ -398,6 +400,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public void ReplaceServices(IAccountConnector account, ISyncCoordinator coordinator)
     {
+        if (Automation is not null && coordinator is SyncCoordinator concrete) App.ReplaceComposition(account, concrete);
         _accountConnector = account; _sync = coordinator; ConfigurationHint = account.ConfigurationHint;
         _account = null; SetAccount(); InvalidatePreview();
     }
@@ -517,6 +520,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
     public void Detach()
     {
+        automationDetached = true;
+        if (Automation is not null) Automation.Changed -= AutomationChanged;
+        _activity.Changed -= AutomationChanged;
         _detailsCancellation?.Cancel(); _detailsCancellation?.Dispose();
         LocalPhotoPreview?.Dispose(); GooglePhotoPreview?.Dispose();
         PlannedPhotoPreview?.Dispose();
@@ -524,6 +530,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Updates.Detach();
         Contacts.Dispose();
     }
+    public ApplicationActivity Activity => _activity;
     private void RefreshCommands()
     {
         OnPropertyChanged(nameof(CanEditEntry));

@@ -169,7 +169,7 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
         };
     }
     private static async Task<bool> OnUi(Func<Task<bool>> action) => await Dispatcher.UIThread.InvokeAsync(action);
-    private void ActivityChanged() => Dispatcher.UIThread.Post(Notify);
+    private void ActivityChanged() { if (Dispatcher.UIThread.CheckAccess()) Notify(); else Dispatcher.UIThread.Post(Notify); }
     partial void OnIsBusyChanged(bool value) => Notify();
     partial void OnShowDecisionChanged(bool value) => Notify();
     partial void OnShowDeleteChanged(bool value) => Notify();
@@ -316,6 +316,7 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
                         candidate = (JsonObject)document!.DeepClone();
                         RememberOrigins(document, candidate, origins);
                         confirmedMutation(candidate);
+                        DocumentCodec.EnsureProtectedCategoriesUnchanged(candidate, original!.Document);
                         dataChanged = !JsonNode.DeepEquals(document,candidate);
                     }
                     editorPopup = null; context.Retired = true;
@@ -461,7 +462,10 @@ public sealed partial class ContactsViewModel : ObservableObject, IDisposable
     public bool Mutate(Action<JsonObject> mutation, bool rebuild = false)
     {
         if (!IsEditing || !CanEdit || document is null) return false;
-        var changed = Guard.TryMutate(() => mutation(document));
+        var candidate = (JsonObject)document.DeepClone(); mutation(candidate);
+        try { DocumentCodec.EnsureProtectedCategoriesUnchanged(candidate, original!.Document); }
+        catch (SyncException e) when (e.Code == "protectedCategory") { Error = e.Message; return false; }
+        var changed = Guard.TryMutate(() => ApplyObjectPatch(document, candidate));
         if (changed)
         {
             RefreshValidation(); Notify();

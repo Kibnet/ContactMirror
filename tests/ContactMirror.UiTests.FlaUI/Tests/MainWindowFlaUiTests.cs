@@ -51,13 +51,15 @@ public sealed class MainWindowFlaUiTests
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "ContactMirror.sln"))) root = root.Parent;
         var repository = root?.FullName ?? throw new InvalidOperationException("Repository not found.");
         using var folder = TemporaryDirectory.Create("ContactMirror-ordinary-demo-smoke");
-        var preferences = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ContactMirror", "desktop-demo.json");
-        var original = File.Exists(preferences) ? File.ReadAllBytes(preferences) : null;
-        Directory.CreateDirectory(Path.GetDirectoryName(preferences)!);
+        var data=Path.Combine(folder.FullPath,"isolated-data");Directory.CreateDirectory(data);
+        var workspace=Path.Combine(folder.FullPath,"workspace");Directory.CreateDirectory(workspace);
+        var preferences = Path.Combine(data,"desktop-demo.json");
+        var app=Environment.GetEnvironmentVariable("CONTACTMIRROR_MCP_TEST_APP") ?? Path.Combine(repository,"artifacts","mcp-validation","app");
         try
         {
-            File.WriteAllText(preferences, System.Text.Json.JsonSerializer.Serialize(new { Folder = folder.FullPath, OAuthPath = "" }));
-            using var application = global::FlaUI.Core.Application.Launch(new System.Diagnostics.ProcessStartInfo(Path.Combine(repository, "src", "ContactMirror.Desktop", "bin", "Release", "net10.0", "ContactMirror.exe"), "--demo") { UseShellExecute = false, WorkingDirectory = repository });
+            File.WriteAllText(preferences, System.Text.Json.JsonSerializer.Serialize(new { Folder = workspace, OAuthPath = "" }));
+            var launch=new System.Diagnostics.ProcessStartInfo(Path.Combine(app,"ContactMirror.exe"),"--demo") {UseShellExecute=false,WorkingDirectory=app,CreateNoWindow=true,WindowStyle=System.Diagnostics.ProcessWindowStyle.Hidden};launch.Environment["CONTACTMIRROR_AUTOMATION_TEST_ROOT"]=data;
+            using var application = global::FlaUI.Core.Application.Launch(launch);
             using var automation = new global::FlaUI.UIA3.UIA3Automation();
             try
             {
@@ -88,7 +90,7 @@ public sealed class MainWindowFlaUiTests
         }
         finally
         {
-            if (original is null) File.Delete(preferences); else File.WriteAllBytes(preferences, original);
+            File.Delete(preferences);
         }
     }
     protected override FlaUiRuntimeSession LaunchSession()

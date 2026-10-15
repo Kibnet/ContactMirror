@@ -4,8 +4,9 @@ using ContactMirror.Core;
 
 namespace ContactMirror.Application;
 
-public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWorkspaceStore store, Action<Exception>? diagnostics = null) : ISyncCoordinator
+public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWorkspaceStore store, Action<Exception>? diagnostics = null, TimeProvider? timeProvider = null) : ISyncCoordinator
 {
+    private DateTimeOffset Now => (timeProvider ?? TimeProvider.System).GetUtcNow();
     private readonly Dictionary<Guid, Prepared> _plans = [];
     private readonly SemaphoreSlim _mutex = new(1, 1);
 
@@ -42,7 +43,7 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
             var remote = await gateway.ReadAllAsync(progress, cancellationToken);
             var p = await BuildAsync(session, account, remote, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            _plans.Clear(); _plans.Add(p.Preview.PlanId, p);
+            RegisterPlan(p);
             return p.Preview;
             }
             throw new SyncException("localRecovery", "Локальная запись требует повторной проверки.");
@@ -57,7 +58,7 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
         var notices = view.Issues.Select(i => $"{Path.GetFileName(i.Path)}: {i.Message}").ToList();
         if (view.IsRecovery) notices.Add("Восстановление состояния: проверьте связи с Google. Удаления отключены до согласования папки.");
         if (view.Pending.Count > 0) notices.Add("Есть незавершённые операции. Их результат будет проверен до повторной записи.");
-        var p = new Prepared { View = view, BindingHash = session.BindingHash, Preview = new() { Root = session.Root, Account = account, Entries = [] } };
+        var p = new Prepared { View = view, BindingHash = session.BindingHash, Preview = new() { Root = session.Root, Account = account, Entries = [], PreparedAt = Now } };
         foreach (var pendingPhoto in view.Pending.Where(o => o.Field == "photo" && o.IntentPhoto is not null)) p.RestoredPhotos[pendingPhoto.EntityId] = pendingPhoto.IntentPhoto;
         var states = view.States;
         foreach (var (id, state) in states) p.WorkingStates[id] = state;
@@ -173,7 +174,7 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
             var id = issue.Id ?? Guid.NewGuid();
             entries.Add(new() { Key = $"issue:{Guid.NewGuid()}", EntityId = id, Entity = EntityKind.Contact, Name = Path.GetFileName(issue.Path), Field = "$file", Kind = ChangeKind.Blocked, Explanation = issue.Message });
         }
-        p.Preview = new() { Root = session.Root, Account = account, Entries = entries.Select(e => EnhanceEntry(p, e)).ToArray(), Notices = notices, ContactCount = p.People.Count, GroupCount = p.Groups.Count, IsRecovery = view.IsRecovery || view.Pending.Count > 0 };
+        p.Preview = new() { Root = session.Root, Account = account, Entries = entries.Select(e => EnhanceEntry(p, e)).ToArray(), Notices = notices, ContactCount = p.People.Count, GroupCount = p.Groups.Count, IsRecovery = view.IsRecovery || view.Pending.Count > 0, PreparedAt = Now };
         foreach (var group in entries.GroupBy(e => e.Key).Where(group => group.Count() == 1))
         {
             var e = group.Single(); p.LocalEditEntries.Add(e.Key, new(e.Key, e.EntityId, e.Entity, e.Field, e.Kind, e.Name));
@@ -351,7 +352,7 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
         await _mutex.WaitAsync(cancellationToken);
         try
         {
-            if (!_plans.Remove(preview.PlanId, out var p) || p.Preview.Root != preview.Root || p.Preview.Account.Key != preview.Account.Key) throw new SyncException("stalePlan", "Этот план устарел. Проверьте изменения ещё раз.");
+            var p = RequirePlan(preview);
             var choiceMap = choices.ToDictionary(c => c.Key, StringComparer.Ordinal);
             var selected = p.Preview.Entries.Where(e => choiceMap.ContainsKey(e.Key) && choiceMap[e.Key].Resolution != Resolution.Skip).ToArray();
             if (selected.Length != choiceMap.Count || selected.Any(e => !e.IsSelectable)) throw new SyncException("invalidSelection", "Выбор содержит неподдерживаемые или устаревшие изменения.");
@@ -360,6 +361,8 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
             if (selected.Any(e => e.Kind == ChangeKind.Conflict && choiceMap[e.Key].Resolution == Resolution.Automatic)) throw new SyncException("unresolvedConflict", "Для конфликтных изменений нужно выбрать сторону.");
             await using var session = await store.OpenAsync(preview.Root, preview.Account, cancellationToken);
             await ValidateInputsAsync(p, session, selected, choiceMap, progress, cancellationToken);
+            ExpirePlan(preview.PlanId, "plan_stale");
+            InvalidatePlans(preview.Root, preview.Account.Key, "plan_stale");
             var items = selected.Select(e => (e.EntityId, e.Entity)).Distinct().Select(pair =>
             {
                 var local = pair.Entity == EntityKind.Contact ? p.View.Contacts.GetValueOrDefault(pair.EntityId) : p.View.Groups.GetValueOrDefault(pair.EntityId);
@@ -378,6 +381,7 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
             }
             progress?.Report(new("Сохраняем резервную копию…"));
             var runId = await session.BeginRunAsync(items, cancellationToken);
+            RunStarted?.Invoke(runId);
             var results = new List<OperationResult>();
             var ordered = selected.OrderBy(e => e.Entity == EntityKind.Group && e.DeletesRemote(choiceMap[e.Key].Resolution) ? 4 : e.Entity == EntityKind.Group ? 0 : e.Kind == ChangeKind.CreateLocal ? 1 : 2).ThenBy(e => e.EntityId).ThenBy(e => e.Field.StartsWith("$journal:", StringComparison.Ordinal) ? 2 : e.Field == "$snapshot" ? 1 : 0).ToArray();
             foreach (var entry in ordered)
@@ -835,7 +839,7 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
     public async Task CleanupBackupAsync(string root, AccountIdentity account, Guid runId, CancellationToken cancellationToken = default)
     {
         await _mutex.WaitAsync(cancellationToken);
-        try { await using var session = await store.OpenAsync(root, account, cancellationToken); await session.DeleteBackupAsync(runId, cancellationToken); _plans.Clear(); }
+        try { await using var session = await store.OpenAsync(root, account, cancellationToken); await session.DeleteBackupAsync(runId, cancellationToken); InvalidatePlans(root, account.Key, "plan_stale"); }
         finally { _mutex.Release(); }
     }
 
@@ -843,7 +847,10 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
     {
         var preview = await PrepareAsync(root, account, progress, cancellationToken);
         var backups = await store.GetBackupAsync(root, runId, cancellationToken);
-        var p = _plans[preview.PlanId]; var entries = new List<SyncEntry>();
+        await _mutex.WaitAsync(cancellationToken);
+        try
+        {
+        var p = RequirePlan(preview); var entries = new List<SyncEntry>();
         foreach (var item in backups)
         {
             if (p.View.Pending.Any(o => o.EntityId == item.Id && o.Status is "started" or "unknown" && (o.CreateIntent || o.Field is "$entity" or "$retry" or "$restoreCreate")))
@@ -927,9 +934,13 @@ public sealed partial class SyncCoordinator(IGoogleContactsGateway gateway, IWor
                 else if (targetHash != remoteHash || targetHash != current?.PhotoHash) entries.Add(EntityEntry(item.Id, item.Kind, name, ChangeKind.Upload, desired["photo"], JsonValue.Create(PersonCodec.PhotoUrl(remote)), "Восстановить содержимое фотографии из резервной копии.", "photo"));
             }
         }
-        var restored = new SyncPreview { PlanId = preview.PlanId, Root = preview.Root, Account = preview.Account, Entries = entries, ContactCount = preview.ContactCount, GroupCount = preview.GroupCount, IsRecovery = preview.IsRecovery, Notices = [.. preview.Notices, "План восстановления подготовлен по текущему состоянию. Файлы и Google пока не изменены."] };
+        var restored = new SyncPreview { PlanId = preview.PlanId, Root = preview.Root, Account = preview.Account, Entries = entries, ContactCount = preview.ContactCount, GroupCount = preview.GroupCount, IsRecovery = preview.IsRecovery, PreparedAt = preview.PreparedAt, Notices = [.. preview.Notices, "План восстановления подготовлен по текущему состоянию. Файлы и Google пока не изменены."] };
         p.Preview = restored;
+        RetentionBudget.Reserve("plan:" + restored.PlanId, PreparedBytes(p));
         return restored;
+        }
+        catch { ExpirePlan(preview.PlanId, "plan_expired"); throw; }
+        finally { _mutex.Release(); }
     }
     private const string RestoreSourceExplanation = "Версии ДО выбранного запуска отличались. «Из папки» и «Из Google» выбирают источник из РЕЗЕРВНОЙ КОПИИ. Выбранное значение будет записано и в Google, и в папку; текущие версии попадут в новую копию.";
 }

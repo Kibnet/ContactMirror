@@ -20,7 +20,8 @@ public static class ApplicationPaths
     public static bool IsSyntheticValidation => false;
     public static bool IsValidation => false;
 #endif
-    public static string DataRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), DataDirectoryName);
+    public static string DataRoot => IsSyntheticValidation && Environment.GetEnvironmentVariable("CONTACTMIRROR_AUTOMATION_TEST_ROOT") is { Length: > 0 } testRoot
+        ? Path.GetFullPath(testRoot) : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), DataDirectoryName);
     public static string ManagedOAuthPath => Path.Combine(DataRoot, "Configuration", "oauth-client.json");
     public static string CredentialPath => Path.Combine(DataRoot, "Credentials", "google.dpapi");
     public static string ApplyingPath => Path.Combine(DataRoot, "update-applying.json");

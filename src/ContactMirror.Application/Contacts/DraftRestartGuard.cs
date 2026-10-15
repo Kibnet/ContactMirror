@@ -11,6 +11,8 @@ public sealed class DraftRestartGuard(ApplicationActivity activity) : IUpdateRes
     public long Generation => Interlocked.Read(ref generation);
     public Func<Task<bool>>? PrepareTransitionAsync { get; set; }
     public Func<bool>? IsTransitionBlocked { get; set; }
+    public Func<string?>? TransitionBlockedReason { get; set; }
+    public string BlockedReason => TransitionBlockedReason?.Invoke() ?? "Сохраните или отмените правки контакта перед перезапуском.";
     public event Action? Changed;
 
     public bool TryMutate(Action change, bool markDirty = true)
@@ -52,6 +54,7 @@ public sealed class DraftRestartGuard(ApplicationActivity activity) : IUpdateRes
         TryMutateChecked(expectedGeneration, condition, () => { change(); return markDirty; });
     public async Task<long?> PrepareAsync()
     {
+        if (IsTransitionBlocked?.Invoke() == true) return null;
         var prepare = PrepareTransitionAsync;
         if (prepare is null || !await prepare()) return null;
         return IsDirty || IsTransitionBlocked?.Invoke() == true ? null : Generation;

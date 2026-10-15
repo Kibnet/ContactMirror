@@ -25,6 +25,7 @@ public interface IApplicationUpdateService
 
 public interface IUpdateRestartGuard
 {
+    string BlockedReason => "Сохраните или отмените правки контакта перед перезапуском.";
     Task<long?> PrepareAsync();
     IDisposable? TryAuthorize(long expectedGeneration);
 }
@@ -87,7 +88,7 @@ public sealed class ApplicationUpdateService(IApplicationUpdateBackend backend, 
         }
         if (guard is null) { Publish(Snapshot with { Error = "Редактор ещё не готов к безопасному перезапуску. Повторите после загрузки окна." }); return; }
         var stamp = await guard.PrepareAsync();
-        if (stamp is null) { Publish(Snapshot with { Error = "Сохраните или отмените правки контакта перед перезапуском." }); return; }
+        if (stamp is null) { Publish(Snapshot with { Error = guard.BlockedReason }); return; }
         var lease = activity.TryEnter(restart: true);
         if (lease is null) { Publish(Snapshot with { Error = "Завершите синхронизацию или вход Google перед перезапуском." }); return; }
         try

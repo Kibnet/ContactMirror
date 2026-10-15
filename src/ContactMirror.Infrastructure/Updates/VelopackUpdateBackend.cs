@@ -110,6 +110,8 @@ public sealed class VelopackUpdateBackend : IApplicationUpdateBackend
     }
     public void ApplyAndRestart()
     {
+        using var agentUpdateGate = ContactMirror.Infrastructure.Automation.AgentUpdateGate.Enter();
+        if (WindowsUpdateProcesses.HasRunningMcpBridge(AppContext.BaseDirectory)) throw new InvalidOperationException("Перед обновлением завершите MCP-клиенты ContactMirror.");
         if (manager is null || prepared is null || targetAssemblyHash is null) throw new InvalidOperationException("Обновление ещё не скачано.");
         ValidateIdentity(prepared.TargetFullRelease);
         var verifiedHash = VerifyPackage(prepared.TargetFullRelease);

@@ -7,6 +7,17 @@ namespace ContactMirror.Infrastructure.Updates;
 
 public static class WindowsUpdateProcesses
 {
+    public static bool HasRunningMcpBridge(string directory)
+    {
+        var expected = Path.GetFullPath(Path.Combine(directory, "ContactMirror.Mcp.exe"));
+        foreach (var process in Process.GetProcessesByName("ContactMirror.Mcp"))
+        using (process)
+        {
+            try { if (!process.HasExited && string.Equals(process.MainModule?.FileName, expected, StringComparison.OrdinalIgnoreCase)) return true; }
+            catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or UnauthorizedAccessException) { return true; }
+        }
+        return false;
+    }
     public static string CurrentOwner()
     {
         if (!OperatingSystem.IsWindows()) return Environment.UserName;

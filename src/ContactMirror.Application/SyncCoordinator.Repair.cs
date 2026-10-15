@@ -76,8 +76,7 @@ public sealed partial class SyncCoordinator
         await _mutex.WaitAsync(cancellationToken);
         try
         {
-            if (!_plans.Remove(preview.PlanId, out var p) || p.Preview.Root != preview.Root || p.Preview.Account.Key != preview.Account.Key)
-                throw new SyncException("stalePlan", "Этот план устарел. Проверьте изменения ещё раз.");
+            var p = RequirePlan(preview);
             var entry = p.Preview.Entries.SingleOrDefault(e => e.Key == entryKey);
             if (entry is not { Entity: EntityKind.Contact, Kind: ChangeKind.Blocked } || !RepairEligible(p, entry.EntityId, out var complete, out _))
                 throw new SyncException("repairUnavailable", "Исправление недоступно для этой записи. Проверьте файлы, связь и незавершённые операции.");
@@ -92,7 +91,10 @@ public sealed partial class SyncCoordinator
             var replacement = (JsonObject)current.Document.DeepClone(); replacement["google"] = state.Baseline["google"]!.DeepClone();
             var intent = pending?.SnapshotRepair ?? new(current.Hash, current.PhotoHash, JsonSemantics.Hash(JsonSemantics.Serialize(replacement)), StateHash(state), current.Path, (JsonObject)state.Baseline["google"]!.DeepClone());
             progress?.Report(new("Сохраняем резервную копию перед локальным исправлением…"));
+            ExpirePlan(preview.PlanId, "plan_stale");
+            InvalidatePlans(preview.Root, preview.Account.Key, "plan_stale");
             var runId = await session.BeginRunAsync([new(EntityKind.Contact, id, current.Document, current.PhotoBytes, p.People[id], p.Photos.GetValueOrDefault(id), state, current.RawBytes, current.Path)], cancellationToken);
+            RunStarted?.Invoke(runId);
             var operation = new JournalOperation(entryKey, id, EntityKind.Contact, RepairField, "started", ResourceName: state.ResourceName, SnapshotRepair: intent);
             await session.RecordAsync(runId, operation, CancellationToken.None);
             SyncRunResult result;

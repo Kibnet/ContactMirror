@@ -85,7 +85,9 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
         catch { await lease.DisposeAsync(); throw; }
     }
 
-    public async Task<IReadOnlyList<RunSummary>> GetHistoryAsync(string root, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<RunSummary>> GetHistoryAsync(string root, CancellationToken cancellationToken = default) => ReadHistoryAsync(root, false, cancellationToken);
+    public Task<IReadOnlyList<RunSummary>> GetAllHistoryAsync(string root, CancellationToken cancellationToken = default) => ReadHistoryAsync(root, true, cancellationToken);
+    private async Task<IReadOnlyList<RunSummary>> ReadHistoryAsync(string root, bool all, CancellationToken cancellationToken)
     {
         root = Path.GetFullPath(root);
         var dbPath = Path.Combine(root, ".contactmirror", "state.db");
@@ -94,7 +96,7 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
         if (!File.Exists(Path.Combine(root, ".contactmirror", "workspace.json"))) throw new SyncException("missingManifest", "У папки отсутствует манифест workspace.json; чтение состояния остановлено.");
         await using var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = dbPath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
         await db.OpenAsync(cancellationToken);
-        using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT id,started,status,confirmed,failed,unknown FROM runs ORDER BY started DESC LIMIT 100";
+        using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT id,started,status,confirmed,failed,unknown FROM runs ORDER BY started DESC" + (all ? "" : " LIMIT 100");
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         var rows = new List<RunSummary>();
         while (await reader.ReadAsync(cancellationToken))
@@ -159,6 +161,14 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
         if (Directory.EnumerateFileSystemEntries(folder).Any(path => !declaredPaths.Contains(path))) throw InvalidBackup();
         return result;
     }
+    public async Task<IReadOnlyList<JournalOperation>> GetRunOperationsAsync(string root, Guid runId, CancellationToken cancellationToken = default)
+    {
+        ValidateControlPaths(root); var path = Path.Combine(root, ".contactmirror", "state.db"); ValidatePath(root, path);
+        await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+        await connection.OpenAsync(cancellationToken); using var command = connection.CreateCommand(); command.CommandText = "SELECT json FROM operations WHERE run_id=$run"; command.Parameters.AddWithValue("$run", runId.ToString());
+        var result = new List<JournalOperation>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) result.Add(JsonSerializer.Deserialize<JournalOperation>(reader.GetString(0), JsonSemantics.Options) ?? throw new SyncException("corruptState", "Журнал повреждён.")); return result;
+    }
 
     public async Task<string> CreateContactFileAsync(string root, CancellationToken cancellationToken = default)
     {
@@ -205,7 +215,7 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
         foreach (var name in new[] { ".contactmirror", ".contactmirror/workspace.json", ".contactmirror/workspace.lock", ".contactmirror/state.db", ".contactmirror/state.db-wal", ".contactmirror/state.db-shm", ".contactmirror/state.db-journal" }) ValidatePath(root, Path.Combine(root, name));
     }
     private static SyncException InvalidBackup() => new("invalidBackup", "Резервная копия неполна или изменена. Восстановление остановлено; исходные файлы не заменены.");
-    private static (List<string> Files, List<string> Directories) InventoryDirectory(string root, string folder)
+    internal static (List<string> Files, List<string> Directories) InventoryDirectory(string root, string folder)
     {
         ValidatePath(root, folder);
         var files = new List<string>();
@@ -260,6 +270,13 @@ public sealed class FileWorkspaceStore : IWorkspaceStore
         public bool HasRecoveryFlag => recovery;
         private FileStream? bindingGuard;
         public WorkspaceView View { get; private set; } = null!;
+        public async Task<string> ReadStateHashAsync(CancellationToken cancellationToken = default)
+        {
+            var states = new List<EntityState>(); using var command = db.CreateCommand(); command.CommandText = "SELECT json FROM entities";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) states.Add(JsonSerializer.Deserialize<EntityState>(reader.GetString(0), JsonSemantics.Options) ?? throw new SyncException("corruptState", "Состояние повреждено."));
+            return JsonSemantics.Hash(JsonSemantics.Serialize(states.OrderBy(s => s.Id).ToArray()));
+        }
         private readonly Dictionary<Guid, EntityState> _states = [];
         private readonly Dictionary<EntityKind, IdentityIndex> _indexes = [];
         private DirectoryChangeJournal? _photoJournal;

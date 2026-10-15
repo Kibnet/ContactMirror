@@ -18,7 +18,7 @@ public sealed class ApplicationActivity
             applying = restart;
         }
         Changed?.Invoke();
-        return new Lease(this);
+        return new TransferableLease(this);
     }
     public void KeepApplying()
     {
@@ -30,9 +30,11 @@ public sealed class ApplicationActivity
         lock (gate) { active = false; applying = false; }
         Changed?.Invoke();
     }
-    private sealed class Lease(ApplicationActivity owner) : IDisposable
+    public sealed class TransferableLease : IDisposable
     {
-        private ApplicationActivity? value = owner;
+        private ApplicationActivity? value;
+        internal TransferableLease(ApplicationActivity owner) { value = owner; }
+        public IDisposable Transfer() => new TransferableLease(Interlocked.Exchange(ref value, null) ?? throw new InvalidOperationException("Lease already transferred."));
         public void Dispose() => Interlocked.Exchange(ref value, null)?.Exit();
     }
 }
