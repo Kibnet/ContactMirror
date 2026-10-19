@@ -4,7 +4,7 @@
 
 ## Исходный код и план
 
-Исходная ветка `feat/mcp-runtime`: feature `960132d`, совместимость с main `17575a8`, аудит rebase `925e76e`; база `e40eb5b` (main 0.5.0). Выпускается MINOR 0.6.0 с 38 MCP tools, shared runtime, защитой черновиков и раздельными правами на папки/local/Google. Product runtime после rebase не меняется; release metadata и Native test harness готовятся отдельно. Curated notes: [releases/0.6.0.md](releases/0.6.0.md).
+Исходная ветка `feat/mcp-runtime`: feature `960132d`, совместимость с main `17575a8`, аудит rebase `925e76e`; база `e40eb5b` (main 0.5.0). Дополнения: Native harness `85c79c4`, release metadata `e0fdf1e`. Подготовлен [draft PR #7](https://github.com/Kibnet/ContactMirror/pull/7), MERGEABLE/CLEAN при проверке. Готовится MINOR 0.6.0 с 38 MCP tools, shared runtime, защитой черновиков и раздельными правами на папки/local/Google. Product runtime после rebase не меняется. Curated notes: [releases/0.6.0.md](releases/0.6.0.md).
 
 Required advisory reviewer `/root/mcp_spec_review` работает procedural no-mutation при writable sandbox: не меняет файлы, Git, внешнее состояние, не запускает сборки/тесты. До публикации требуется закрыть Native gate, закрепить exact merged SHA и проверить свежий Production output. `Publish-Release.ps1` используется только для dry-run plan; его стандартные notes не публикуются.
 
@@ -12,17 +12,31 @@ Required advisory reviewer `/root/mcp_spec_review` работает procedural n
 
 | Проверка | Статус | Evidence |
 | --- | --- | --- |
-| Release solution build | PASS до release stamp; свежая 0.6.0 validation выполняется | `chat-artifacts/release-0.6.0/build.log` |
-| Core | Выполняется | `TestResults/Release060/core/core.trx` |
-| Google/storage | Ожидает Core | `TestResults/Release060/google/google.trx` |
-| MCP | Ожидает доменные suites; fresh Synthetic payload | `tests/ContactMirror.McpTests/bin/Release/net10.0/TestResults/release-060-mcp.trx` |
-| Headless | Ожидает MCP | `tests/ContactMirror.UiTests.Headless/bin/Release/net10.0/TestResults/release-060-headless.trx` |
+| Release solution build | PASS, 0 warnings/errors, версия 0.6.0 | `chat-artifacts/release-0.6.0/build.log` |
+| Core | 174/174, 0 skip, 1m36s | `TestResults/Release060/core/core.trx` |
+| Google/storage | 185/185, 0 skip, 30s | `TestResults/Release060/google/google.trx` |
+| MCP | 44/44, 0 skip, 1m56s; fresh Synthetic payload | `tests/ContactMirror.McpTests/bin/Release/net10.0/TestResults/release-060-mcp.trx` |
+| Headless | 103/103, 0 skip, 3m44s | `tests/ContactMirror.UiTests.Headless/bin/Release/net10.0/TestResults/release-060-headless.trx` |
 | Native | **BLOCKED: Windows LockApp, keyboard foreground недоступен** | `release-060-native-source-before.trx`, `release-060-native-focus-fixed.trx`, `release-060-native-input-ready.trx` в Native TestResults |
 | Synthetic package | PASS | `artifacts/releases/Synthetic-0.6.0-preflight/build-0.6.0-mcp.validation1.json` |
-| Production/package/public updater | Не выполнены | План после exact main merge |
+| Production candidate package | PASS, локальный кандидат из unmerged `e0fdf1e`, не release | `artifacts/releases/Production-0.6.0-candidate/build-0.6.0.json`, `chat-artifacts/release-0.6.0/candidate/package-verification.json` |
+| Effective OAuth/account continuity | PASS, локальное чтение vault, без Google-запросов | `chat-artifacts/release-0.6.0/candidate/oauth-continuity.json` |
+| Merge/public release/public updater | Не выполнены | План после Native PASS и exact main merge |
 | Локальная установка | Не выполнена; остаётся 0.5.0 | Preservation baseline ниже |
 
 Для протокольных проверок fresh Synthetic Desktop/MCP staging скопирован в `artifacts/mcp-validation/app`; старый payload сохранён соседним каталогом. Сборки, упаковка и suites выполняются последовательно. Исторические 521 PASS/1 unresolved от 15 октября не считаются свежими результатами выпуска.
+
+Свежий итог без Native: **506 PASS, 0 fail/skip**. Headless PNG `chat-artifacts/ui/20261019-222823-728/mcp-photo-refreshed.png` и `chat-artifacts/ui/20261019-222824-024/mcp-settings-rendered.png` открыты и просмотрены: новое имя/фото отображаются в карточке и таблице, панель прав/папок/config доступна. Это rendered-state evidence, не Native keyboard acceptance и не UX-исследование.
+
+## Локальный Production-кандидат
+
+При чистом tracked tree `e0fdf1e42a760527b542691c161667942f6cd129` собран отдельный output `artifacts/releases/Production-0.6.0-candidate`. ProductVersion — `0.6.0+e0fdf1e42a760527b542691c161667942f6cd129`, App ID `ContactMirror.Desktop`, канал `win`, RID `win-x64`. Это **unmerged candidate**, который не публиковался и не устанавливался. После слияния требуется новая сборка из exact merged SHA в другом свежем output; кандидат не подменяет release provenance.
+
+`Build-Release.ps1` подтвердил compiled profile/shared binaries, а настоящий `VelopackUpdateBackend.VerifyPackageFile` — full SHA256/size, nuspec/identity/version/channel/RID/mainExe и assembly hash. Full SHA256: `E403FD680AD521F1F7A1DCC46E88C688A0B28C56C2DC3B6D5D54E98DC94E702B`; assembly hash совпал со staging. В ZIP 290 entries; MCP exe/dll/docs и DataGrid присутствуют; PDB, test binaries, DPAPI/vault payload отсутствуют. Publisher OAuth и GitHub source проверены без вывода значений credentials.
+
+Dry-run `Publish-Release.ps1` вернул ровно пять assets: full nupkg, Setup, portable ZIP, `releases.win.json`, `SHA256SUMS.txt`, pinned target `e0fdf1e...`, `published=false`. Standard notes, созданные скриптом в output, не предназначены для публикации; использовать curated `docs/releases/0.6.0.md`.
+
+`OAuthClientOptions.LoadForRuntime(packaged:true)` выбрал publisher для старой установки и кандидата. Effective ClientId одинаков; оба `GoogleAccountService.GetAccountAsync` локально распознали тот же сохранённый аккаунт. Vault hash не изменился. Идентификатор, адрес аккаунта, токены и секреты не печатались/не сохранялись в evidence. Это continuity локального подключения, а не live Google OAuth/sync validation.
 
 ## Native blocker и диагностика
 
@@ -30,13 +44,15 @@ Required advisory reviewer `/root/mcp_spec_review` работает procedural n
 
 Уточнён Native harness: перед глобальными клавишами проверяется actual foreground HWND; настоящий `Automation.FocusedElement()` ожидается с process guard, исходной паузой 80ms и всеми пятью прежними assertions. Timeout возвращает null. При отказе активации допускается одиночный click по поднятому caption собственного тестового HWND, temporary topmost снимается в finally; размеры активной записи не меняются. Продуктовый focus trap не меняется. Advisory source review исправил потенциальный premature PASS и обход process guard; обе находки закрыты по source, acceptance требует actual PASS.
 
-Новый precondition не прошёл ещё до клавиатурного ввода. Read-only Win32 probe выявил foreground process **LockApp** при Session1: Windows заблокирована. Это объясняет отсутствие корректной предпосылки keyboard input в текущем запуске, но не доказывает причину всех исторических failures или исправление продукта. Пользователю отправлен запрос разблокировать Windows. Гейт не ослабляется и не объявляется PASS.
+Новый precondition не прошёл ещё до клавиатурного ввода. Read-only Win32 probe выявил foreground process **LockApp** при Session1: Windows заблокирована. Evidence `input-desktop-probe.json` (22:21Z) и `input-desktop-recheck.json` (22:29Z) в `chat-artifacts/release-0.6.0/` подтверждают состояние. Это объясняет отсутствие корректной предпосылки keyboard input в текущем запуске, но не доказывает причину всех исторических failures или исправление продукта. Пользователю отправлен запрос разблокировать Windows. Гейт не ослабляется и не объявляется PASS. Before MP4 проверен через ffprobe: H.264, 1250×876, 66.6s; это failing test evidence, не успешная приёмка.
 
 ## Сохранность локальной установки
 
 До обновления: installed ProductVersion `0.5.0+0ca08593c877e629054c8075c0568bb691a8dcf3`; Production App ID `ContactMirror.Desktop`. Сохранён baseline SHA256/size **1017** файлов contacts/groups/photos в пользовательской папке и **3** protected settings/vault файлов в LocalAppData. Папки разработки `.git`/`.venv` в snapshot не входят. Evidence: `chat-artifacts/release-0.6.0/preservation-before.json` (ignored, не публикуется).
 
-После сборки Production необходимо проверить effective OAuth ClientId против установленного пакета без печати значений. Перед установкой проверить public feed/download через настоящий `VelopackUpdateBackend` с изолированным cache и `applied=false`; затем установить опубликованный Setup и отдельно проверить версию, hashes, обычный запуск и сохранность данных/settings/vault. Реальные Google-записи не выполнять.
+После подготовки и чтения account continuity hashes всех 1017 файлов и трёх protected settings/vault снова совпали; установленная версия осталась 0.5.0. Evidence: `preservation-after-preparation.json`, `updated=false`. Никакая установка не выдаётся за выполненную.
+
+Перед установкой требуется проверить public feed/download через настоящий `VelopackUpdateBackend` с изолированным cache и `applied=false`; затем установить опубликованный Setup и отдельно проверить версию, hashes, обычный запуск и сохранность данных/settings/vault. Реальные Google-записи не выполнять. Probe source подготовлен в ignored `chat-artifacts/release-0.6.0/public-update-probe`; public mode не запускался, поскольку release 0.6.0 ещё не опубликован.
 
 ## Review / Stop
 
