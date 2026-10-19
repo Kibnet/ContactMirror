@@ -57,3 +57,5 @@ Dry-run `Publish-Release.ps1` вернул ровно пять assets: full nupk
 ## Review / Stop
 
 Pre-release plan пригоден после закрытия обязательного Native gate. **Текущий STOP: NEEDS-FIX / внешнее состояние Windows.** Ни готовность к stable publication, ни успешный merge/release/install пока не заявляются. Автоматический downgrade приложения не поддерживается; исправление выпускается следующей версией, ручная переустановка — отдельный rollback path. OAuth Testing и отсутствие подписи установщика сохраняются.
+
+Финальный procedural advisory reviewer прочитал четыре свежих TRX (506 PASS/0 fail/skip), manifest/package/OAuth/preservation proof и probe source; независимо сверил size/SHA256 трёх binary assets и feed, открыл два новых Headless PNG и прочитал live PR #7 (OPEN/DRAFT, MERGEABLE/CLEAN). Новых замечаний к подготовке нет. Пять ролей согласовали workflow, архитектуру, QA evidence и delivery preparation; UX/Native acceptance остаётся открытой. Итоговый полный STOP — **NEEDS-FIX**, слияние/публикация/установка не выполнены. Успешный review подготовки не заменяет mandatory Native PASS или future exact-main rebuild/public updater/install proof.
