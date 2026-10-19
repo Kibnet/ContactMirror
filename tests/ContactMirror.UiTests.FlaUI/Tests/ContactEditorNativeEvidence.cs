@@ -3,37 +3,79 @@ using AppAutomation.FlaUI.Automation;
 using AppAutomation.TUnit;
 using AppAutomation.Abstractions;
 using TUnit.Assertions;
+using System.Runtime.InteropServices;
 
 namespace ContactMirror.UiTests.FlaUI.Tests;
 
 public sealed partial class IntegratedDemoFlaUiTests
 {
+    [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")]
+    private static extern IntPtr EditorForegroundWindow();
+
+    private async Task ActivateEditorWindowAsync()
+    {
+        var window=Session.Inner.MainWindow;
+        window.SetForeground();
+        if(EditorForegroundWindow()!=window.Properties.NativeWindowHandle.Value)
+        {
+            // A background runner may be denied activation. Click only the raised test caption.
+            var caption=window.TitleBar ?? throw new InvalidOperationException("Native test window caption is unavailable.");
+            NativeWindowCapture.RaiseForInput(window.Properties.NativeWindowHandle.Value,true);
+            try { caption.Click(); }
+            finally { NativeWindowCapture.RaiseForInput(window.Properties.NativeWindowHandle.Value,false); }
+        }
+        for(var n=0;n<100;n++)
+        {
+            if(EditorForegroundWindow()==window.Properties.NativeWindowHandle.Value)return;
+            await Task.Delay(50);
+        }
+        throw new InvalidOperationException("Native keyboard input requires the test window in the foreground.");
+    }
+
+    private async Task<AutomationElement?> DecisionKeyboardFocusAsync()
+    {
+        AutomationElement? focus=null;
+        var window=Session.Inner.MainWindow;
+        for(var n=0;n<100;n++)
+        {
+            focus=window.Automation.FocusedElement();
+            if(focus?.Properties.ProcessId.ValueOrDefault==window.Properties.ProcessId.Value
+                && focus.AutomationId is "ContactDecisionSave" or "ContactDecisionDiscard" or "ContactDecisionStay")return focus;
+            await Task.Delay(50);
+        }
+        Console.WriteLine($"Native focus wait expired: process={focus?.Properties.ProcessId.ValueOrDefault}, id={focus?.AutomationId}");
+        return null;
+    }
+
     protected override async Task InspectEditorNativeDirtyLifecycleAsync()
     {
+        if(_editorWindowVideo is null)NativeWindowCapture.Resize(Session.Inner.MainWindow.Properties.NativeWindowHandle.Value,1180,820);
+        await ActivateEditorWindowAsync();
         var keyboard=global::FlaUI.Core.WindowsAPI.VirtualKeyShort.ALT;
         global::FlaUI.Core.Input.Keyboard.Press(keyboard);
         global::FlaUI.Core.Input.Keyboard.Press(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.F4);
         global::FlaUI.Core.Input.Keyboard.Release(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.F4);
         global::FlaUI.Core.Input.Keyboard.Release(keyboard);
-        for(var n=0;n<100;n++)
-        {
-            if(Session.Inner.MainWindow.FindFirstDescendant(Session.Inner.ConditionFactory.ByAutomationId("ContactDecisionStay")) is not null)break;
-            await Task.Delay(50);
-        }
+        await FriendlyNativeWait("ContactDecisionStay");
         for(var n=0;n<5;n++)
         {
+            await ActivateEditorWindowAsync();
             global::FlaUI.Core.Input.Keyboard.Press(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.TAB);
             global::FlaUI.Core.Input.Keyboard.Release(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.TAB);
             await Task.Delay(80);
-            var focus=Session.Inner.MainWindow.FindAllDescendants().FirstOrDefault(element=>element.Properties.HasKeyboardFocus.ValueOrDefault);
+            var focus=await DecisionKeyboardFocusAsync();
+            Console.WriteLine($"Native TAB {n}: foreground={EditorForegroundWindow()}, target={Session.Inner.MainWindow.Properties.NativeWindowHandle.Value}, focusedProcess={focus?.Properties.ProcessId.ValueOrDefault}, id={focus?.AutomationId}");
+            CaptureCheckpoint("editor-native-dialog-tab-"+n);
             await Assert.That(focus?.AutomationId is "ContactDecisionSave" or "ContactDecisionDiscard" or "ContactDecisionStay").IsTrue();
         }
         CaptureCheckpoint("editor-native-close-dirty-focus");
+        await ActivateEditorWindowAsync();
         global::FlaUI.Core.Input.Keyboard.Press(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL);
         global::FlaUI.Core.Input.Keyboard.Press(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_S);
         global::FlaUI.Core.Input.Keyboard.Release(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_S);
         global::FlaUI.Core.Input.Keyboard.Release(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL);
         await Task.Delay(100);await Assert.That(Page.ContactDecisionStay.IsEnabled).IsTrue();
+        await ActivateEditorWindowAsync();
         global::FlaUI.Core.Input.Keyboard.Press(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.ESCAPE);
         global::FlaUI.Core.Input.Keyboard.Release(global::FlaUI.Core.WindowsAPI.VirtualKeyShort.ESCAPE);
         for(var n=0;n<100;n++){if(Session.Inner.MainWindow.FindFirstDescendant(Session.Inner.ConditionFactory.ByAutomationId("ContactDecisionStay")) is null)break;await Task.Delay(50);}

@@ -15,6 +15,11 @@ internal static class NativeWindowCapture
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out Rect rect);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
     public static void Maximize(IntPtr window) => ShowWindow(window, 3);
+    public static void RaiseForInput(IntPtr window,bool topmost)
+    {
+        if(!SetWindowPos(window,new IntPtr(topmost?-1:-2),0,0,0,0,0x13))
+            throw new InvalidOperationException("Could not raise the native test window for input.");
+    }
     public static void Compact(IntPtr window)
         => Resize(window,1000,700);
     public static void Resize(IntPtr window,int logicalWidth,int logicalHeight)
