@@ -8,12 +8,23 @@ using ContactMirror.Infrastructure;
 using ContactMirror.Infrastructure.Google;
 using ContactMirror.Infrastructure.Demo;
 using ContactMirror.Infrastructure.Configuration;
+using ContactMirror.Infrastructure.Automation;
+using ContactMirror.Infrastructure.Contacts;
+using Avalonia.Threading;
 
 namespace ContactMirror.Desktop;
 
 public sealed partial class App : Avalonia.Application
 {
     public static Func<MainWindow>? MainWindowFactory { get; set; }
+    public static AgentRuntime? Automation { get; private set; }
+    private static IAccountConnector? sharedAccount;
+    private static SyncCoordinator? sharedSync;
+    private static ContactEditorStore? sharedEditor;
+    private MainWindow? window;
+    private DesktopAgentUi? agentUi;
+    private AgentPipeServer? pipe;
+    private AgentActivation? activation;
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     internal static WindowIcon LoadWindowIcon()
@@ -25,12 +36,50 @@ public sealed partial class App : Avalonia.Application
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            desktop.MainWindow = !string.IsNullOrEmpty(Program.StartupProblem) ? new UpdateRecoveryWindow() : MainWindowFactory?.Invoke() ?? new MainWindow(CreateViewModel());
+        {
+            if (!string.IsNullOrEmpty(Program.StartupProblem)) desktop.MainWindow = new UpdateRecoveryWindow();
+            else if (MainWindowFactory is not null) desktop.MainWindow = MainWindowFactory();
+            else
+            {
+                var initial = CreateViewModel();
+                desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                agentUi = new DesktopAgentUi(ShowWindowAsync); Automation!.Ui = agentUi;
+                pipe = new(Automation); _ = pipe.StartAsync();
+                activation = new(ShowWindowAsync); _ = activation.StartAsync();
+                if (!Program.IsAgentHost) CreateWindow(initial); else initial.Detach();
+                var idleSince = DateTimeOffset.UtcNow;
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                timer.Tick += (_, _) =>
+                {
+                    if (window is not null || Automation.ConnectedClients > 0 || Automation.HasRunningJobs || Program.Activity.IsActive) idleSince = DateTimeOffset.UtcNow;
+                    else if (DateTimeOffset.UtcNow - idleSince > TimeSpan.FromSeconds(30)) desktop.Shutdown();
+                };
+                timer.Start(); desktop.Exit += (_, _) => { timer.Stop(); activation.Dispose(); pipe.Dispose(); Automation.Dispose(); };
+            }
+        }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private void CreateWindow(MainWindowViewModel model)
+    {
+        var desktop = (IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!;
+        window = new MainWindow(model); agentUi!.Model = model; desktop.MainWindow = window;
+        window.Closed += (_, _) =>
+        {
+            window = null; agentUi.Model = null;
+            if (Automation!.ConnectedClients == 0 && !Automation.HasRunningJobs && !Program.Activity.IsActive) desktop.Shutdown();
+        };
+    }
+    private Task ShowWindowAsync()
+    {
+        if (!Dispatcher.UIThread.CheckAccess()) return Dispatcher.UIThread.InvokeAsync(ShowWindowAsync);
+        if (window is null) CreateWindow(CreateViewModel());
+        window!.Show(); if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal; window.Activate(); return Task.CompletedTask;
     }
 
     public static MainWindowViewModel CreateViewModel()
     {
+        if (sharedAccount is not null) return ViewModel(sharedAccount, sharedSync!, sharedEditor!);
             IAccountConnector account;
             IGoogleContactsGateway gateway;
             if (Program.IsDemo)
@@ -56,7 +105,18 @@ public sealed partial class App : Avalonia.Application
                 account = google;
                 gateway = new GoogleContactsGateway(google);
             }
-        return new MainWindowViewModel(account,
-                new SyncCoordinator(gateway, new FileWorkspaceStore()), Program.IsDemo, activity: Program.Activity, updates: Program.Updates, editorStore: new ContactMirror.Infrastructure.Contacts.ContactEditorStore());
+        var store = new FileWorkspaceStore(); var sync = new SyncCoordinator(new GuardedGoogleGateway(gateway), store); var editor = new ContactEditorStore();
+        sharedAccount = account; sharedSync = sync; sharedEditor = editor;
+        Automation = new AgentRuntime(account, sync, editor, store, Program.Activity);
+        return ViewModel(account, sync, editor);
+    }
+    private static MainWindowViewModel ViewModel(IAccountConnector account, SyncCoordinator sync, ContactEditorStore editor)
+    {
+        var model = new MainWindowViewModel(account, sync, Program.IsDemo, activity: Program.Activity, updates: Program.Updates, editorStore: editor);
+        model.AttachAutomation(Automation!); return model;
+    }
+    internal static void ReplaceComposition(IAccountConnector account, SyncCoordinator sync)
+    {
+        sharedAccount = account; sharedSync = sync; Automation?.Reconfigure(account, sync);
     }
 }

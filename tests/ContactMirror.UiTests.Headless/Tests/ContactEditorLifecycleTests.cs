@@ -87,8 +87,39 @@ public sealed partial class MainWindowHeadlessTests
             await LifecycleWait(() => LifecycleDecisionReady(UxModel().Contacts), "closing dirty window asks first");
             var alive = false; HeadlessRuntime.Dispatch(() => alive = Session.Inner.MainWindow.IsVisible && UxModel().Contacts.IsDirty);
             await Assert.That(alive).IsTrue(); await Assert.That(closed).IsEqualTo(0);
+            // Exercise Avalonia's real key routing without assigning focus to an expected button.
+            await LifecycleWait(() => DecisionHasKeyboardFocus(), "closing modal receives keyboard focus");
+            var visited = new HashSet<string>();
+            for (var index = 0; index < 10; index++)
+            {
+                string? focusedId = null;
+                HeadlessRuntime.Dispatch(() =>
+                {
+                    var modifiers = index < 5 ? RawInputModifiers.None : RawInputModifiers.Shift;
+                    Session.Inner.MainWindow.KeyPress(Key.Tab, modifiers, PhysicalKey.Tab, null);
+                    Session.Inner.MainWindow.KeyRelease(Key.Tab, modifiers, PhysicalKey.Tab, null);
+                    if (Session.Inner.MainWindow.FocusManager!.GetFocusedElement() is Control control)
+                        focusedId = AutomationProperties.GetAutomationId(control);
+                });
+                await Assert.That(focusedId is "ContactDecisionSave" or "ContactDecisionDiscard" or "ContactDecisionStay").IsTrue();
+                visited.Add(focusedId!);
+            }
+            await Assert.That(visited.Count).IsEqualTo(3);
+            HeadlessRuntime.Dispatch(() =>
+            {
+                Session.Inner.MainWindow.KeyPress(Key.S, RawInputModifiers.Control, PhysicalKey.S, null);
+                Session.Inner.MainWindow.KeyRelease(Key.S, RawInputModifiers.Control, PhysicalKey.S, null);
+            });
+            var modalStillDirty = false;
+            HeadlessRuntime.Dispatch(() => modalStillDirty = UxModel().Contacts.ShowDecision && UxModel().Contacts.IsDirty);
+            await Assert.That(modalStillDirty).IsTrue();
+            await Assert.That((await File.ReadAllBytesAsync(file)).SequenceEqual(before)).IsTrue();
             CaptureCheckpoint("editor-window-close-decision");
-            HeadlessRuntime.Dispatch(() => LifecycleKey(EditorControl("ContactDecisionStay"), Key.Escape));
+            HeadlessRuntime.Dispatch(() =>
+            {
+                Session.Inner.MainWindow.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+                Session.Inner.MainWindow.KeyRelease(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            });
             await LifecycleWait(() => !UxModel().Contacts.ShowDecision, "Escape canceled window close");
             await Task.Delay(30);
             HeadlessRuntime.Dispatch(() => alive = Session.Inner.MainWindow.IsVisible && UxModel().Contacts.IsDirty && UxModel().Contacts.Document!["data"]!["names"]![0]!["familyName"]!.ToString() == "Несохранённая фамилия");
@@ -150,6 +181,8 @@ public sealed partial class MainWindowHeadlessTests
         target.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key, KeyModifiers = modifiers });
     private bool LifecycleDecisionReady(ContactsViewModel model) => model.ShowDecision && Session.Inner.MainWindow.GetVisualDescendants().OfType<Button>()
         .Any(button => AutomationProperties.GetAutomationId(button) == "ContactDecisionStay");
+    private bool DecisionHasKeyboardFocus() => Session.Inner.MainWindow.FocusManager!.GetFocusedElement() is Control control
+        && AutomationProperties.GetAutomationId(control) is "ContactDecisionSave" or "ContactDecisionDiscard" or "ContactDecisionStay";
     private static async Task LifecycleWait(Func<bool> condition, string step)
     {
         var timer = Stopwatch.StartNew();

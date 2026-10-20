@@ -5,6 +5,7 @@ using System.Text;
 using ContactMirror.Application;
 using ContactMirror.Application.Updates;
 using ContactMirror.Application.Contacts;
+using ContactMirror.Infrastructure.Automation;
 using ContactMirror.Infrastructure.Configuration;
 using ContactMirror.Infrastructure.Updates;
 using Velopack;
@@ -15,6 +16,7 @@ namespace ContactMirror.Desktop;
 public static class Program
 {
     public static bool IsDemo { get; private set; }
+    public static bool IsAgentHost { get; private set; }
     public static bool IsPackaged { get; private set; }
     public static bool WasRestarted { get; private set; }
     public static string StartupProblem { get; private set; } = "";
@@ -34,9 +36,11 @@ public static class Program
             return;
         }
         IsDemo = ApplicationPaths.IsSyntheticValidation || args.Contains("--demo");
+        IsAgentHost = args.Contains("--agent-host");
         var locator = VelopackLocator.Current;
         IsPackaged = locator.CurrentlyInstalledVersion is not null;
         var roots = new List<string> { Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), ApplicationPaths.AppId) };
+        roots.Add(AppContext.BaseDirectory);
         if (locator.RootAppDir is { } installRoot) roots.Add(installRoot);
         WorkspacePathPolicy.Current = new(roots);
         Mutex? instance = null;
@@ -44,12 +48,16 @@ public static class Program
         try
         {
             var owner = WindowsUpdateProcesses.CurrentOwner();
+            instance = new Mutex(false, InstanceName(owner));
+            try { ownsInstance = instance.WaitOne(0); } catch (AbandonedMutexException) { ownsInstance = true; }
+            if (!ownsInstance)
+            {
+                if (IsAgentHost || AgentActivation.ShowExistingAsync().GetAwaiter().GetResult()) { instance.Dispose(); return; }
+                StartupProblem = "ContactMirror уже открыт или обновляется. Вернитесь в первое окно и дождитесь завершения операции.";
+            }
             if (IsPackaged)
             {
                 if (locator.AppId != ApplicationPaths.AppId) StartupProblem = "Идентификатор установленного приложения не соответствует этой сборке. Повторите установку ContactMirror.";
-                instance = new Mutex(false, InstanceName(owner));
-                try { ownsInstance = instance.WaitOne(0); } catch (AbandonedMutexException) { ownsInstance = true; }
-                if (!ownsInstance) StartupProblem = "ContactMirror уже открыт или обновляется. Вернитесь в первое окно и дождитесь завершения операции.";
                 var handoff = new UpdateHandoff(ApplicationPaths.ApplyingPath);
                 if (ownsInstance && handoff.IsPending)
                 {
@@ -70,6 +78,7 @@ public static class Program
         { StartupProblem = "Не удалось проверить состояние установки. Вход Google и синхронизация не запущены. Повторите установку ContactMirror."; }
         // A blocked shortcut must not retain the instance gate against the SDK restart.
         if (ownsInstance && !string.IsNullOrEmpty(StartupProblem)) { instance!.ReleaseMutex(); ownsInstance = false; }
+        if (IsAgentHost && !string.IsNullOrEmpty(StartupProblem)) { instance?.Dispose(); return; }
         try { BuildAvaloniaApp().StartWithClassicDesktopLifetime(args); }
         finally { if (ownsInstance) instance?.ReleaseMutex(); instance?.Dispose(); }
         if (RestartAfterRecovery)

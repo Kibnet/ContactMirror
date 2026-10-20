@@ -5,6 +5,31 @@ namespace ContactMirror.Core;
 
 public static class DocumentCodec
 {
+    /// <summary>Compatibility is confined to the local editor. Opaque categories are never uploaded.</summary>
+    public static IReadOnlyList<string> ProtectedCategories(JsonObject doc) =>
+        (doc["data"] as JsonObject ?? new()).Where(p =>
+            !CapabilityRegistry.WritableFields.Contains(p.Key, StringComparer.Ordinal) ||
+            CapabilityRegistry.ValidateEditable(p.Key, p.Value).Any(e => e.Contains("неизвестное поле", StringComparison.Ordinal)) ||
+            p.Value is JsonArray { Count: > 1 } && p.Key is "names" or "birthdays" or "biographies" or "genders")
+        .Select(p => p.Key).ToArray();
+
+    public static ContactDocument ContactForEditor(JsonObject doc, JsonObject? baseline = null)
+    {
+        var protectedKeys = ProtectedCategories(baseline ?? doc);
+        if (baseline is not null) EnsureProtectedCategoriesUnchanged(doc, baseline);
+        var checkedDoc = (JsonObject)doc.DeepClone();
+        if (checkedDoc["data"] is JsonObject data)
+            foreach (var key in protectedKeys) data.Remove(key);
+        var parsed = Contact(checkedDoc);
+        parsed.Data = (JsonObject)doc["data"]!.DeepClone();
+        return parsed;
+    }
+    public static void EnsureProtectedCategoriesUnchanged(JsonObject doc, JsonObject baseline)
+    {
+        foreach (var key in ProtectedCategories(baseline))
+            if (!JsonNode.DeepEquals(baseline["data"]?[key], doc["data"]?[key]))
+                throw new SyncException("protectedCategory", $"Категория {key} содержит неподдерживаемые данные и доступна только для чтения.");
+    }
     public static ContactDocument Contact(JsonObject doc)
     {
         ValidateHeader(doc);

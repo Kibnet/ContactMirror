@@ -33,6 +33,8 @@ public interface IWorkspaceStore
 {
     Task<IWorkspaceSession> OpenAsync(string root, AccountIdentity account, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RunSummary>> GetHistoryAsync(string root, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RunSummary>> GetAllHistoryAsync(string root, CancellationToken cancellationToken = default) => GetHistoryAsync(root, cancellationToken);
+    Task<IReadOnlyList<JournalOperation>> GetRunOperationsAsync(string root, Guid runId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<JournalOperation>>([]);
     Task<IReadOnlyList<BackupItem>> GetBackupAsync(string root, Guid runId, CancellationToken cancellationToken = default);
     Task<string> CreateContactFileAsync(string root, CancellationToken cancellationToken = default);
 }
@@ -42,6 +44,7 @@ public interface IWorkspaceSession : IAsyncDisposable
     bool HasRecoveryFlag => View.IsRecovery;
     string Root { get; }
     WorkspaceView View { get; }
+    Task<string> ReadStateHashAsync(CancellationToken cancellationToken = default) => Task.FromResult(JsonSemantics.Hash(JsonSemantics.Serialize(View.States.OrderBy(p => p.Key).Select(p => p.Value).ToArray())));
     Task<LocalEntity?> ReadLocalAsync(EntityKind kind, Guid id, CancellationToken cancellationToken = default);
     Task<Guid> BeginRunAsync(IReadOnlyList<BackupItem> items, CancellationToken cancellationToken = default);
     Task RecordAsync(Guid runId, JournalOperation operation, CancellationToken cancellationToken = default);

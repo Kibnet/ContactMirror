@@ -10,6 +10,7 @@ namespace ContactMirror.Infrastructure.Contacts;
 /// <summary>Local-only editor. Reads never initialize or migrate sync state.</summary>
 public sealed class ContactEditorStore : IContactEditorStore
 {
+    public event Action<string>? BackupCreated;
     private const int JsonLimit = 16 * 1024 * 1024, PhotoLimit = 20 * 1024 * 1024;
     private readonly Action<string>? beforeReplace, afterReplace, afterBackup, afterStateCopy;
     public ContactEditorStore() { }
@@ -33,17 +34,17 @@ public sealed class ContactEditorStore : IContactEditorStore
         if (item is null) throw new SyncException("missingContact", "Контакт не найден или его идентификатор повторяется. Обновите список и исправьте ошибки папки.");
         var bytes = await FileWorkspaceStore.ReadBoundedBytesAsync(inspection.Catalog.Root, item.Path, JsonLimit, cancellationToken);
         var doc = JsonSemantics.ParseObject(bytes, item.Path);
-        if (DocumentCodec.Contact(doc).Id != id) throw Drift();
+        if (DocumentCodec.ContactForEditor(doc).Id != id) throw Drift();
         var photo = await ReadPhotoAsync(inspection.Catalog.Root, doc, cancellationToken);
         return new(inspection.Catalog.Root, inspection.Catalog.WorkspaceId, id, item.Path, doc, bytes, JsonSemantics.Hash(bytes), photo,
-            photo is null ? null : JsonSemantics.Hash(photo), inspection.Catalog.ReadOnlyReason ?? inspection.Catalog.BlockedContacts?.GetValueOrDefault(id), inspection.BindingHash, inspection.LabelsHash);
+            photo is null ? null : JsonSemantics.Hash(photo), inspection.Catalog.ReadOnlyReason ?? inspection.Catalog.BlockedContacts?.GetValueOrDefault(id), inspection.BindingHash, inspection.LabelsHash, inspection.Catalog.StateHash);
     }
     public async Task<ContactSnapshot> SaveAsync(ContactSnapshot original, JsonObject document, ContactPhotoEdit photo,
         AccountIdentity? activeAccount = null, CancellationToken cancellationToken = default)
     {
         original = CopySnapshot(original);
         var output = (JsonObject)document.DeepClone(); var replacementPhoto = photo.Bytes?.ToArray();
-        var parsed = DocumentCodec.Contact(output);
+        var parsed = original.IsNew ? DocumentCodec.Contact(output) : DocumentCodec.ContactForEditor(output, original.Document);
         if (parsed.Id != original.Id) throw new SyncException("identityChanged", "Идентификатор контакта не редактируется.");
         if (!JsonNode.DeepEquals(output["google"], original.Document["google"])) throw new SyncException("protectedField", "Служебные сведения Google доступны только для просмотра.");
         if (!photo.Changed && !JsonNode.DeepEquals(output["photo"], original.Document["photo"])) throw new SyncException("protectedField", "Меняйте фотографию через выбор файла.");
@@ -67,7 +68,7 @@ public sealed class ContactEditorStore : IContactEditorStore
         ValidateLabels(parsed.Labels, inspection.Catalog); await CheckIdentityAsync(original, inspection, cancellationToken);
         if (!original.IsNew && !photo.Changed && JsonNode.DeepEquals(output, original.Document)) return original;
         await using var oldPhoto = await PinPhotoAsync(original, cancellationToken);
-        var backup = await BackupAsync(original, "save", cancellationToken); afterBackup?.Invoke(backup);
+        var backup = await BackupAsync(original, "save", cancellationToken); BackupCreated?.Invoke(backup); afterBackup?.Invoke(backup);
         await RecheckAsync(original, activeAccount, cancellationToken);
         if (photo.Changed)
         {
@@ -110,7 +111,7 @@ public sealed class ContactEditorStore : IContactEditorStore
         await CheckIdentityAsync(original, inspection, cancellationToken);
         await using var photoGuard = await PinPhotoAsync(original, cancellationToken);
         await using var jsonGuard = new FileStream(original.Path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
-        var backup = await BackupAsync(original, "delete", cancellationToken); afterBackup?.Invoke(backup);
+        var backup = await BackupAsync(original, "delete", cancellationToken); BackupCreated?.Invoke(backup); afterBackup?.Invoke(backup);
         await RecheckAsync(original, activeAccount, cancellationToken);
         var trash = Path.Combine(root, ".contactmirror", "editor-trash", Path.GetFileName(backup));
         FileWorkspaceStore.ValidatePath(root, trash); Directory.CreateDirectory(trash);
@@ -180,7 +181,7 @@ public sealed class ContactEditorStore : IContactEditorStore
         var bytes = await FileWorkspaceStore.ReadBoundedBytesAsync(expected.Root, expected.Path, JsonLimit, CancellationToken.None);
         if (JsonSemantics.Hash(bytes) != expected.Hash) return false;
         var doc = JsonSemantics.ParseObject(bytes, expected.Path);
-        if (DocumentCodec.Contact(doc).Id != expected.Id) return false;
+        if (DocumentCodec.ContactForEditor(doc).Id != expected.Id) return false;
         var photo = await ReadPhotoAsync(expected.Root, doc, CancellationToken.None);
         return (photo is null ? null : JsonSemantics.Hash(photo)) == expected.PhotoHash;
     }
@@ -217,7 +218,7 @@ public sealed class ContactEditorStore : IContactEditorStore
     }
     private static void CheckBinding(ContactSnapshot original, Inspection inspection)
     {
-        if (original.WorkspaceId != inspection.Catalog.WorkspaceId || original.BindingHash != inspection.BindingHash || original.LabelsHash != inspection.LabelsHash) throw Drift();
+        if (original.WorkspaceId != inspection.Catalog.WorkspaceId || original.BindingHash != inspection.BindingHash || original.LabelsHash != inspection.LabelsHash || original.StateHash is not null && original.StateHash != inspection.Catalog.StateHash) throw Drift();
     }
     private static void ValidateLabels(IEnumerable<Guid> labels, ContactCatalog catalog)
     {
@@ -228,14 +229,14 @@ public sealed class ContactEditorStore : IContactEditorStore
         var matches = inspection.Catalog.Contacts.Where(c => c.Id == original.Id).ToArray();
         if (original.IsNew)
         {
-            if (matches.Length != 0 || File.Exists(original.Path)) throw Drift();
+            if (matches.Length != 0 || File.Exists(original.Path) || inspection.Catalog.Labels.ContainsKey(original.Id) || inspection.Catalog.TrustedStates?.GetValueOrDefault(original.Id)?.Kind == EntityKind.Group) throw Drift();
             var expected = Path.Combine(original.Root, "contacts", $"{original.Id}.contact.json");
             if (!Path.GetFullPath(original.Path).Equals(expected, StringComparison.OrdinalIgnoreCase)) throw new SyncException("unsafePath", "Новый контакт должен сохраняться в contacts/ с его UUID.");
             return;
         }
         if (matches.Length != 1 || !matches[0].Path.Equals(original.Path, StringComparison.OrdinalIgnoreCase)) throw Drift();
         var bytes = await FileWorkspaceStore.ReadBoundedBytesAsync(original.Root, original.Path, JsonLimit, token);
-        if (JsonSemantics.Hash(bytes) != original.Hash || DocumentCodec.Contact(JsonSemantics.ParseObject(bytes, original.Path)).Id != original.Id) throw Drift();
+        if (JsonSemantics.Hash(bytes) != original.Hash || DocumentCodec.ContactForEditor(JsonSemantics.ParseObject(bytes, original.Path)).Id != original.Id) throw Drift();
         var photo = await ReadPhotoAsync(original.Root, JsonSemantics.ParseObject(bytes, original.Path), token);
         if ((photo is null ? null : JsonSemantics.Hash(photo)) != original.PhotoHash) throw Drift();
     }
@@ -281,8 +282,10 @@ public sealed class ContactEditorStore : IContactEditorStore
         root = Normalize(root);
         var issues = new List<WorkspaceIssue>(); var blocked = new Dictionary<Guid, string>();
         var contacts = new List<ContactCatalogItem>(); var labels = new Dictionary<Guid, string>(); var groupHashes = new List<string>(); var boundGroups = new HashSet<Guid>();
+        var groupDocumentHashes = new Dictionary<Guid, string>();
         var duplicateContacts = new HashSet<Guid>(); var duplicateGroups = new HashSet<Guid>(); var seenContacts = new HashSet<Guid>();
-        string? reason = null, bindingHash = null; Guid workspaceId = Guid.Empty;
+        string? reason = null, bindingHash = null, stateHash = null; Guid workspaceId = Guid.Empty;
+        IReadOnlyDictionary<Guid, EntityState>? trustedStates = null;
         foreach (var kind in new[] { EntityKind.Contact, EntityKind.Group })
         {
             var folder = Path.Combine(root, kind == EntityKind.Contact ? "contacts" : "groups");
@@ -299,7 +302,7 @@ public sealed class ContactEditorStore : IContactEditorStore
                     if (Guid.TryParse(doc["id"]?.ToString(), out var parsedId)) issueId = parsedId;
                     if (kind == EntityKind.Contact)
                     {
-                        var contact = DocumentCodec.Contact(doc);
+                        var contact = DocumentCodec.ContactForEditor(doc);
                         if (contact.Photo is not null) FileWorkspaceStore.SafePhotoPath(root, contact.Photo); // Bytes are loaded only for an opened card.
                         if (duplicateContacts.Contains(contact.Id) || !seenContacts.Add(contact.Id))
                         {
@@ -307,7 +310,7 @@ public sealed class ContactEditorStore : IContactEditorStore
                             foreach (var earlier in contacts.Where(c => c.Id == contact.Id)) issues.Add(new(earlier.Path, blocked[contact.Id], contact.Id));
                             contacts.RemoveAll(c => c.Id == contact.Id); issues.Add(new(path, blocked[contact.Id], contact.Id));
                         }
-                        else contacts.Add(new(contact.Id, path, doc));
+                        else contacts.Add(new(contact.Id, path, doc, JsonSemantics.Hash(bytes)));
                     }
                     else
                     {
@@ -315,8 +318,10 @@ public sealed class ContactEditorStore : IContactEditorStore
                         if (duplicateGroups.Contains(group.Id) || !labels.TryAdd(group.Id, group.Name))
                         {
                             duplicateGroups.Add(group.Id); labels.Remove(group.Id);
+                            groupDocumentHashes.Remove(group.Id);
                             blocked[group.Id] = "Ярлык имеет повторяющийся UUID."; issues.Add(new(path, blocked[group.Id], group.Id));
                         }
+                        else groupDocumentHashes[group.Id] = JsonSemantics.Hash(bytes);
                     }
                 }
                 catch (Exception ex) when (ReadFailure(ex))
@@ -370,6 +375,8 @@ public sealed class ContactEditorStore : IContactEditorStore
                         || string.IsNullOrWhiteSpace(state.ResourceName) || !states.TryAdd(state.Id, state)) throw new SyncException("corruptState", "Запись состояния не позволяет определить контакт или ярлык.");
                 }
             }
+            trustedStates = states;
+            stateHash = JsonSemantics.Hash(JsonSemantics.Serialize(states.OrderBy(p => p.Key).Select(p => p.Value).ToArray()));
             foreach (var contact in contacts)
                 if (contact.Document["google"] is not null && (!states.TryGetValue(contact.Id, out var state) || state.Kind != EntityKind.Contact))
                     reason ??= "Есть контакты Google без доверенного состояния. Сначала восстановите синхронизацию.";
@@ -416,14 +423,14 @@ public sealed class ContactEditorStore : IContactEditorStore
             }
             foreach (var contact in contacts)
             {
-                var labelIds = DocumentCodec.Contact(contact.Document).Labels;
+                var labelIds = DocumentCodec.ContactForEditor(contact.Document).Labels;
                 if (labelIds.Any(id => !labels.ContainsKey(id) || pendingGroups.Contains(id))) blocked[contact.Id] = "Ярлык контакта отсутствует, повторяется или ожидает восстановления. Сначала исправьте ярлык.";
             }
         }
         catch (Exception ex) when (ReadFailure(ex) || ex is SqliteException)
         { reason ??= "Состояние папки нельзя безопасно прочитать. Контакты доступны для просмотра; запись запрещена. " + ex.Message; }
         return Result();
-        Inspection Result() => new(new(root, workspaceId, contacts, labels, issues, reason, blocked, bindingHash, labelsHash), bindingHash, labelsHash);
+        Inspection Result() => new(new(root, workspaceId, contacts, labels, issues, reason, blocked, bindingHash, labelsHash, stateHash, trustedStates, groupDocumentHashes), bindingHash, labelsHash);
     }
     private static IEnumerable<string> Enumerate(string root, string folder)
     {

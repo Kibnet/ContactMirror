@@ -41,6 +41,21 @@ try {
     $taskPublish = @('publish', 'src/ContactMirror.Desktop/ContactMirror.Desktop.csproj', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-o', $taskStage, "-p:Version=$Version", '-p:DebugType=None', '-p:DebugSymbols=false')
     $taskPublish += "-p:ContactMirrorValidationProfile=$ValidationProfile"
     Invoke-ReleaseTool $taskPublish
+    $taskBridgeStage = Join-Path $taskStage 'mcp-payload'
+    Invoke-ReleaseTool @('publish', 'src/ContactMirror.Mcp/ContactMirror.Mcp.csproj', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-o', $taskBridgeStage, "-p:Version=$Version", '-p:DebugType=None', '-p:DebugSymbols=false', "-p:ContactMirrorValidationProfile=$ValidationProfile")
+    $taskBridgeProfile = (& (Join-Path $taskBridgeStage 'ContactMirror.Mcp.exe') --inspect-package-profile | Out-String) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $taskBridgeProfile.appId -ne $taskIdentity -or $taskBridgeProfile.profile -ne $ValidationProfile) { throw 'MCP bridge profile не совпадает с PackId.' }
+    foreach ($taskBridgeFile in Get-ChildItem -LiteralPath $taskBridgeStage -Recurse -File) {
+        $taskBridgeRelative = [IO.Path]::GetRelativePath($taskBridgeStage, $taskBridgeFile.FullName)
+        $taskBridgeTarget = [IO.Path]::GetFullPath((Join-Path $taskStage $taskBridgeRelative))
+        if (-not $taskBridgeTarget.StartsWith($taskStage + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'MCP payload выходит за staging.' }
+        if (Test-Path -LiteralPath $taskBridgeTarget -PathType Leaf) {
+            if ((Get-FileHash -LiteralPath $taskBridgeTarget).Hash -ne (Get-FileHash -LiteralPath $taskBridgeFile.FullName).Hash) { throw "MCP и Desktop имеют несовместимый общий файл: $taskBridgeRelative" }
+        } else { New-Item -ItemType Directory -Path (Split-Path -Parent $taskBridgeTarget) -Force | Out-Null; Copy-Item -LiteralPath $taskBridgeFile.FullName -Destination $taskBridgeTarget }
+    }
+    $taskBridgeResolved = [IO.Path]::GetFullPath($taskBridgeStage)
+    if (-not $taskBridgeResolved.StartsWith($taskStage + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Неверный staging cleanup path.' }
+    Remove-Item -LiteralPath $taskBridgeResolved -Recurse -Force
     $taskCompiled = (& (Join-Path $taskStage 'ContactMirror.exe') --inspect-package-profile | Out-String) | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or $taskCompiled.appId -ne $taskIdentity -or $taskCompiled.profile -ne $ValidationProfile) { throw 'Compiled profile/identity не совпадает с PackId. Pack остановлен.' }
     $taskSettings = Join-Path $taskStage 'appsettings'
@@ -49,11 +64,11 @@ try {
     @{ kind = if ($UpdateSourceKind -eq 'none') { '' } else { $UpdateSourceKind }; url = $UpdateSource; channel = 'win' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskSettings 'updates.json') -Encoding utf8NoBOM
     Copy-Item -LiteralPath (Join-Path $taskRoot 'README.md') -Destination $taskStage
     $taskDocs = Join-Path $taskStage 'docs'; New-Item -ItemType Directory -Path $taskDocs -Force | Out-Null
-    foreach ($taskDoc in @('FORMAT.md', 'GOOGLE_SETUP.md', 'RELEASE.md')) {
+    foreach ($taskDoc in @('FORMAT.md', 'GOOGLE_SETUP.md', 'RELEASE.md', 'MCP.md')) {
         $taskDocPath = Join-Path $taskRoot "docs\$taskDoc"
         if (Test-Path -LiteralPath $taskDocPath) { Copy-Item -LiteralPath $taskDocPath -Destination $taskDocs }
     }
-    'ContactMirror uses Velopack 1.2.0 (MIT), .NET, Avalonia, SQLite, Google.Apis.Auth and SkiaSharp. Package licenses remain with their respective owners.' | Set-Content -LiteralPath (Join-Path $taskStage 'THIRD-PARTY-NOTICES.txt') -Encoding utf8NoBOM
+    'ContactMirror uses Velopack 1.2.0 (MIT), ModelContextProtocol 2.2.0 (Apache-2.0), Microsoft.Extensions.Hosting (MIT), .NET, Avalonia, SQLite, Google.Apis.Auth and SkiaSharp. Package licenses remain with their respective owners.' | Set-Content -LiteralPath (Join-Path $taskStage 'THIRD-PARTY-NOTICES.txt') -Encoding utf8NoBOM
     foreach ($taskSymbol in Get-ChildItem -LiteralPath $taskStage -Recurse -File -Filter '*.pdb') {
         $taskSymbolPath = [IO.Path]::GetFullPath($taskSymbol.FullName)
         if (-not $taskSymbolPath.StartsWith($taskStage + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Debug symbol выходит за staging directory.' }

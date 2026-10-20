@@ -192,7 +192,7 @@
       <Border IsVisible="{Binding HasPanel}" Classes="card">
         <Grid RowDefinitions="Auto,*">
           <Button Content="← Вернуться к изменениям" Command="{Binding ClosePanelCommand}" HorizontalAlignment="Left" Classes="quiet" AutomationProperties.AutomationId="ClosePanelButton" Margin="0,0,0,14"/>
-          <ScrollViewer Grid.Row="1" IsVisible="{Binding ShowSettings}"><StackPanel Spacing="16" MaxWidth="840" HorizontalAlignment="Stretch">
+          <ScrollViewer Grid.Row="1" IsVisible="{Binding ShowSettings}" AutomationProperties.AutomationId="SettingsScroll"><StackPanel Spacing="16" MaxWidth="840" HorizontalAlignment="Stretch">
             <TextBlock Text="Настройки" FontSize="26" FontWeight="SemiBold"/>
             <TextBlock Text="Папка контактов" FontSize="18" FontWeight="SemiBold"/>
             <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Folder}" TextWrapping="Wrap" VerticalAlignment="Center"/><Button Grid.Column="1" Content="Выбрать другую папку…" Click="ChooseFolder" IsEnabled="{Binding CanConfigure}"/></Grid>
@@ -202,6 +202,20 @@
             <TextBlock Text="Разрешение хранится в защищённом хранилище Windows. Отключение удаляет локальный токен; файлы сохраняются." Classes="caption"/>
             <Expander Header="Подключение для разработчиков"><StackPanel Spacing="10"><Button Content="Выбрать OAuth-конфигурацию…" Click="ChooseOAuth" IsEnabled="{Binding CanOverrideOAuth}" HorizontalAlignment="Left" AutomationProperties.AutomationId="OAuthConfigButton"/><Button Content="Использовать подключение издателя" Click="UsePublisherOAuth" IsEnabled="{Binding CanOverrideOAuth}" HorizontalAlignment="Left" AutomationProperties.AutomationId="PublisherOAuthButton"/></StackPanel></Expander>
             <Grid ColumnDefinitions="Auto,*"><TextBlock Text="Тема" Margin="0,0,14,0" VerticalAlignment="Center"/><ComboBox Grid.Column="1" SelectedIndex="0" SelectionChanged="ThemeChanged" Width="190" HorizontalAlignment="Left"><ComboBoxItem Content="Как в системе"/><ComboBoxItem Content="Светлая"/><ComboBoxItem Content="Тёмная"/></ComboBox></Grid>
+            <Separator/>
+            <StackPanel IsVisible="{Binding HasMcp}" Spacing="10" AutomationProperties.AutomationId="McpSettingsPanel">
+              <TextBlock Text="Доступ для агентов (MCP)" FontSize="18" FontWeight="SemiBold"/>
+              <TextBlock Text="Агенты работают с сохранёнными контактами. Несохранённые изменения в карточке защищены. Настройте папки и права, затем подключите MCP-клиент." TextWrapping="Wrap" Classes="caption"/>
+              <CheckBox Content="Разрешить MCP" IsChecked="{Binding McpEnabled}" IsEnabled="{Binding CanConfigure}" AutomationProperties.AutomationId="McpEnabled"/>
+              <TextBlock Text="Разрешённые папки — по одной в строке"/>
+              <TextBox Text="{Binding McpRoots}" AcceptsReturn="True" MinHeight="72" IsEnabled="{Binding CanConfigure}" AutomationProperties.AutomationId="McpRoots"/>
+              <Button Content="Добавить текущую папку" Command="{Binding AddMcpFolderCommand}" HorizontalAlignment="Left" IsEnabled="{Binding CanConfigure}"/>
+              <WrapPanel><CheckBox Content="Изменение локальных контактов и меток" IsChecked="{Binding McpLocalWrite}" IsEnabled="{Binding CanConfigure}" Margin="0,0,18,0" AutomationProperties.AutomationId="McpLocalWrite"/><CheckBox Content="Запись и подключение Google" IsChecked="{Binding McpGoogleWrite}" IsEnabled="{Binding CanConfigure}" AutomationProperties.AutomationId="McpGoogleWrite"/></WrapPanel>
+              <TextBlock Text="Чтение разрешено при включённом доступе. Локальные правки отправляются в Google только отдельным применением проверенного плана." TextWrapping="Wrap" Classes="caption"/>
+              <WrapPanel><Button Content="Сохранить настройки" Command="{Binding SaveMcpSettingsCommand}" IsEnabled="{Binding CanConfigure}" AutomationProperties.AutomationId="SaveMcpSettingsButton" Margin="0,0,8,8"/><Button Content="Скопировать конфигурацию" Click="CopyMcpConfiguration" AutomationProperties.AutomationId="CopyMcpConfigButton" Margin="0,0,8,8"/><Button Content="Отключить доступ" Command="{Binding DisableMcpCommand}" AutomationProperties.AutomationId="DisableMcpButton" Margin="0,0,8,8"/></WrapPanel>
+              <TextBlock Text="{Binding McpStatus}" TextWrapping="Wrap" AutomationProperties.AutomationId="McpStatusText"/>
+              <TextBox Text="{Binding McpConfiguration}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="180" AutomationProperties.AutomationId="McpConfiguration"/>
+            </StackPanel>
             <Separator/>
             <TextBlock Text="Обновления" FontSize="18" FontWeight="SemiBold"/>
             <TextBlock Text="{Binding Updates.CurrentVersion}" AutomationProperties.AutomationId="AppVersionText" AutomationProperties.Name="{Binding Updates.CurrentVersion}"/>

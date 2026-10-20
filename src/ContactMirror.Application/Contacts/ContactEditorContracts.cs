@@ -11,14 +11,14 @@ public sealed class ContactEditorWriteException(ContactWriteOutcome outcome, Con
     public ContactSnapshot? Snapshot { get; } = snapshot;
 }
 
-public sealed record ContactCatalogItem(Guid Id, string Path, JsonObject Document);
+public sealed record ContactCatalogItem(Guid Id, string Path, JsonObject Document, string? DocumentHash = null);
 public sealed record ContactCatalog(string Root, Guid WorkspaceId, IReadOnlyList<ContactCatalogItem> Contacts,
     IReadOnlyDictionary<Guid, string> Labels, IReadOnlyList<WorkspaceIssue> Issues,
     string? ReadOnlyReason = null, IReadOnlyDictionary<Guid, string>? BlockedContacts = null,
-    string? BindingHash = null, string? LabelsHash = null);
+    string? BindingHash = null, string? LabelsHash = null, string? StateHash = null, IReadOnlyDictionary<Guid, EntityState>? TrustedStates = null, IReadOnlyDictionary<Guid, string>? GroupDocumentHashes = null);
 public sealed record ContactSnapshot(string Root, Guid WorkspaceId, Guid Id, string Path, JsonObject Document,
     byte[]? RawBytes, string? Hash, byte[]? PhotoBytes, string? PhotoHash, string? ReadOnlyReason = null,
-    string? BindingHash = null, string? LabelsHash = null)
+    string? BindingHash = null, string? LabelsHash = null, string? StateHash = null)
 {
     public bool IsNew => Hash is null;
 }

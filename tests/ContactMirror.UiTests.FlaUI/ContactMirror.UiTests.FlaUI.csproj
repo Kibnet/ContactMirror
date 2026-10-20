@@ -12,10 +12,12 @@
     <PackageReference Include="AppAutomation.FlaUI" Version="1.9.0" />
     <PackageReference Include="AppAutomation.TUnit" Version="1.9.0" />
     <PackageReference Include="TUnit" Version="1.61.29" />
+    <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ContactMirror.UiTests.Authoring\ContactMirror.UiTests.Authoring.csproj" />
     <ProjectReference Include="..\ContactMirror.AppAutomation.TestHost\ContactMirror.AppAutomation.TestHost.csproj" />
+    <ProjectReference Include="..\..\src\ContactMirror.Infrastructure\ContactMirror.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

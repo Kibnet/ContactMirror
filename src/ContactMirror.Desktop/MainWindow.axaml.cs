@@ -11,6 +11,7 @@ using ContactMirror.Application;
 using ContactMirror.Infrastructure;
 using ContactMirror.Infrastructure.Google;
 using ContactMirror.Infrastructure.Configuration;
+using ContactMirror.Infrastructure.Automation;
 
 namespace ContactMirror.Desktop;
 
@@ -118,6 +119,11 @@ public sealed partial class MainWindow : Window
         }
     }
     private async void FolderInputLostFocus(object? sender, RoutedEventArgs args) => await _viewModel.CommitFolderInputAsync();
+    private async void CopyMcpConfiguration(object? sender, RoutedEventArgs args)
+    {
+        var text = _viewModel.BuildMcpConfiguration(); _viewModel.McpConfiguration = text;
+        if (Clipboard is not null) { var data = new DataTransfer(); data.Add(DataTransferItem.CreateText(text)); await Clipboard.SetDataAsync(data); _viewModel.Status = "Конфигурация MCP скопирована. Сохраните её в настройках клиента."; }
+    }
     private async void ChooseFolder(object? sender, RoutedEventArgs args) => await _viewModel.ConfigureAsync(async token =>
     {
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Папка контактов ContactMirror", AllowMultiple = false });
@@ -159,7 +165,7 @@ public sealed partial class MainWindow : Window
         {
             var managedPath = OAuthClientOptions.ImportManaged(path);
             var account = new GoogleAccountService(OAuthClientOptions.Load(managedPath) with { ConfigurationSource = "managed" }, new WindowsCredentialVault());
-            _viewModel.ReplaceServices(account, new SyncCoordinator(new GoogleContactsGateway(account), new FileWorkspaceStore()));
+            _viewModel.ReplaceServices(account, new SyncCoordinator(new GuardedGoogleGateway(new GoogleContactsGateway(account)), new FileWorkspaceStore()));
             new DesktopPreferences(_viewModel.Folder, managedPath).Save();
             await _viewModel.ReloadConnectionAsync(token);
         }
@@ -177,7 +183,7 @@ public sealed partial class MainWindow : Window
             (DesktopPreferences.Load() with { OAuthPath = "" }).Save();
             var options = OAuthClientOptions.LoadForRuntime(true, null, AppContext.BaseDirectory, Environment.CurrentDirectory);
             var account = new GoogleAccountService(options, new WindowsCredentialVault());
-            _viewModel.ReplaceServices(account, new SyncCoordinator(new GoogleContactsGateway(account), new FileWorkspaceStore()));
+            _viewModel.ReplaceServices(account, new SyncCoordinator(new GuardedGoogleGateway(new GoogleContactsGateway(account)), new FileWorkspaceStore()));
             await _viewModel.ReloadConnectionAsync(token);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)

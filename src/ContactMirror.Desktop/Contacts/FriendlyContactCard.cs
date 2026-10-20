@@ -137,6 +137,12 @@ public static partial class ContactCardControls
         private Control Category(ContactFieldDescriptor field, JsonArray? existing)
         {
             var panel = new StackPanel { Spacing = 8 };
+            if (captured is not null && DocumentCodec.ProtectedCategories(captured).Contains(field.Name, StringComparer.Ordinal))
+            {
+                panel.Children.Add(Heading(ContactPresentationCatalog.Title(field.Name) + " — только просмотр"));
+                panel.Children.Add(Text("Категория содержит неподдерживаемые данные. Они сохраняются без изменений."));
+                panel.Children.Add(ReadonlyNode(captured["data"]?[field.Name], field.Title)); return panel;
+            }
             if (!vm.IsEditing)
             {
                 var rows = existing is null ? [] : Enumerable.Range(0, existing.Count).Select(index => new RowRef(index, ["data", field.Name, index])).ToArray();

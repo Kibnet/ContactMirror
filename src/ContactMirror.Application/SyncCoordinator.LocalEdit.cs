@@ -19,6 +19,7 @@ public sealed partial class SyncCoordinator
         {
             if (!_plans.TryGetValue(preview.PlanId, out var p) || p.Preview.Root != preview.Root || p.Preview.Account.Key != preview.Account.Key)
                 throw new SyncException("stalePlan", "Сравнение устарело. Проверьте изменения снова.");
+            p = RequirePlan(preview);
             var entry = p.LocalEditEntries.GetValueOrDefault(entryKey) ?? throw new SyncException("missingEntry", "Изменение не найдено.");
             if (entry.Kind is ChangeKind.Blocked or ChangeKind.Reconcile or ChangeKind.Snapshot || entry.Field.StartsWith('$') && entry.Field != "$entity"
                 || p.View.IsRecovery || p.View.Pending.Count > 0 || p.UnsafeRemoteIdentity || p.View.Issues.Count > 0)
@@ -54,6 +55,7 @@ public sealed partial class SyncCoordinator
         if (!localEdits.TryGetValue(edit.Token, out var registration) || !ReferenceEquals(registration.Handle, edit)
             || !_plans.TryGetValue(registration.Plan.Preview.PlanId, out var active) || !ReferenceEquals(active, registration.Plan))
             throw new SyncException("stalePlan", "Правка устарела. Черновик сохранён; откройте изменение после новой проверки.");
+        _ = RequirePlan(registration.Plan.Preview);
         return registration;
     }
 
@@ -122,7 +124,7 @@ public sealed partial class SyncCoordinator
                 ["photoChanged"] = photo.Changed, ["photoHash"] = photo.Changed ? photo.Bytes is null ? null : JsonSemantics.Hash(photo.Bytes) : current?.PhotoHash };
             var operation = new JournalOperation(e.Key, e.EntityId, e.Entity, LocalEditField, "started", payload, remote?["resourceName"]?.ToString(), IntentPhoto: photo.Bytes);
             await session.RecordAsync(run, operation, CancellationToken.None);
-            _plans.Clear(); localEdits.Clear();
+            InvalidatePlans(p.Preview.Root, p.Preview.Account.Key, "plan_stale");
             try
             {
                 var saved = await session.WriteAsync(e.Entity, e.EntityId, output, current?.Hash, photo.Bytes, current?.PhotoHash, photo.Changed, token);
@@ -216,7 +218,7 @@ public sealed partial class SyncCoordinator
             var run = await session.BeginRunAsync([new(e.Entity, e.EntityId, current.Document, current.PhotoBytes, null, null, p.View.States.GetValueOrDefault(e.EntityId), current.RawBytes, current.Path)], token);
             var operation = new JournalOperation(e.Key, e.EntityId, e.Entity, LocalEditField, "started", new JsonObject { ["document"] = current.Document.DeepClone(), ["bindingHash"] = p.BindingHash, ["beforeHash"] = current.Hash, ["stateBeforeHash"] = p.View.States.TryGetValue(e.EntityId, out var oldState) ? StateHash(oldState) : null, ["delete"] = true });
             await session.RecordAsync(run, operation, CancellationToken.None);
-            _plans.Clear(); localEdits.Clear();
+            InvalidatePlans(p.Preview.Root, p.Preview.Account.Key, "plan_stale");
             try
             {
                 await session.TrashAsync(e.Entity, e.EntityId, current.Hash, run, token);
