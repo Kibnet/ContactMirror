@@ -1,6 +1,20 @@
 # ContactMirror 0.6.0: проверка доставки
 
-Дата: 20 октября 2026. Пользователь разрешил merge в main, выпуск релиза и обновление локальной установки. **Статус: подготовка; публикация и установка ещё не выполнены.**
+Дата: 20 октября 2026. Пользователь разрешил merge в main, выпуск релиза и обновление локальной установки. **Статус: выполнено — PR #7 слит, стабильная 0.6.0 опубликована, локальная установка обновлена и запущена.**
+
+## Результат доставки
+
+- [PR #7](https://github.com/Kibnet/ContactMirror/pull/7) слит в main 20 октября в17:21UTC, exact merge/release SHA `1e73a574f222ff716c8a7e43f6362b2bd1d5bf5e`.
+- [v0.6.0](https://github.com/Kibnet/ContactMirror/releases/tag/v0.6.0) — public stable Latest, не draft/prerelease. Tag разрешается в указанный merged SHA. Curated notes совпадают с `docs/releases/0.6.0.md`.
+- Production заново собран из чистого exact merged HEAD в `artifacts/releases/Production-0.6.0-release`; прежний unmerged candidate не публиковался. Версия `0.6.0+1e73a574f222ff716c8a7e43f6362b2bd1d5bf5e`, profile Production, App ID `ContactMirror.Desktop`, channel win, RID win-x64.
+- Проверены package/feed/nuspec/config/shared-binary/bridge/docs/DataGrid и отсутствие private/test payload; SHA256 full package `8C67818BDA896BCCA524B506F8EB2DE8917595CAFF8A2051E7515F016D5EE25B`, Desktop DLL `797892788D15CC98F37EDD9F5BFC40A86A93A4B311649E7BD5F00849B768AB8C`.
+- Все пять remote assets сверены с локальной сборкой по size/SHA256 GitHub digest до stable publication. Публиковались только full nupkg, Setup, Portable ZIP, feed и SHA256SUMS; private manifest/evidence/OAuth source/vault не загружались.
+- Настоящий `VelopackUpdateBackend` с источником старой установленной0.5.0 анонимно обнаружил, скачал и проверил0.6.0 в отдельном cache. `applied=false`, старая assembly/sq.version на этой фазе не изменились. Это проверка discovery/download, не claim нажатия UI «обновить и перезапустить».
+- После проверки установлен публичному payload идентичный Setup (`--silent`), exit0. Installed ProductVersion/sq.version/App ID/channel/compiled Desktop+MCP profiles и DLL hash совпадают с релизом.
+- Обычный запуск установленного `current/ContactMirror.exe`: PID194516, окно `ContactMirror`, responding=true, recoveryWindow=false. Интерактивный ввод/Win32 keyboard acceptance не заявляются.
+- До установки создан backup1017 contact/group/photo файлов и3protected settings/vault вне репозитория. Хеши исходных1017+3 совпадают перед установкой, после неё и после обычного запуска. Сохранённый аккаунт локально распознан, effective OAuth ClientId совместим, vault не менялся; live Google requests/writes не выполнялись.
+
+Ignored local proofs: `chat-artifacts/release-0.6.0/release/{package-verification,oauth-continuity,draft-remote,public-remote}.json`, `release/public-update/public-update.json`, `local-update/{baseline,before-install,installer,installed-package,oauth-continuity,ordinary-launch,after}.json`. Backup: `%LOCALAPPDATA%/ContactMirror-release-backups/0.5.0-to-0.6.0-20261020-171938`. Ниже сохранена история подготовки и выбора UI runner; candidate/старые Native failures не подменяют итоговые результаты.
 
 ## Исходный код и план
 
@@ -23,8 +37,8 @@ Required advisory reviewer `/root/mcp_spec_review` работает procedural n
 | Synthetic package | PASS | `artifacts/releases/Synthetic-0.6.0-preflight/build-0.6.0-mcp.validation1.json` |
 | Production candidate package | PASS, локальный кандидат из unmerged `e0fdf1e`, не release | `artifacts/releases/Production-0.6.0-candidate/build-0.6.0.json`, `chat-artifacts/release-0.6.0/candidate/package-verification.json` |
 | Effective OAuth/account continuity | PASS, локальное чтение vault, без Google-запросов | `chat-artifacts/release-0.6.0/candidate/oauth-continuity.json` |
-| Merge/public release/public updater | Не выполнены | План после Headless keyboard PASS и exact main merge |
-| Локальная установка | Не выполнена; остаётся 0.5.0 | Preservation baseline ниже |
+| Merge/public release/public updater | PASS | PR #7 merged, v0.6.0 stable Latest; anonymous discovery/download/package verification PASS |
+| Локальная установка | PASS, 0.6.0+1e73a57 | Setup exit0, installed identity/hash/profile, обычный запуск, preservation1017+3 PASS |
 
 Для протокольных проверок fresh Synthetic Desktop/MCP staging скопирован в `artifacts/mcp-validation/app`; старый payload сохранён соседним каталогом. Сборки, упаковка и suites выполняются последовательно. Исторические 521 PASS/1 unresolved от 15 октября не считаются свежими результатами выпуска.
 
@@ -60,12 +74,14 @@ Targeted run: `dotnet run --project tests/ContactMirror.UiTests.Headless -c Rele
 
 После подготовки и чтения account continuity hashes всех 1017 файлов и трёх protected settings/vault снова совпали; установленная версия осталась 0.5.0. Evidence: `preservation-after-preparation.json`, `updated=false`. Никакая установка не выдаётся за выполненную.
 
-Перед установкой требуется проверить public feed/download через настоящий `VelopackUpdateBackend` с изолированным cache и `applied=false`; затем установить опубликованный Setup и отдельно проверить версию, hashes, обычный запуск и сохранность данных/settings/vault. Реальные Google-записи не выполнять. Probe source подготовлен в ignored `chat-artifacts/release-0.6.0/public-update-probe`; public mode не запускался, поскольку release 0.6.0 ещё не опубликован.
+План public feed/download через настоящий `VelopackUpdateBackend` с изолированным cache и `applied=false` выполнен после публикации; затем установлен проверенный Setup. Версия, hashes, обычный запуск и сохранность данных/settings/vault подтверждены в итоговых proof выше. Реальные Google-записи не выполнялись. Probe source — ignored `chat-artifacts/release-0.6.0/public-update-probe`.
 
 ## Review / Stop
 
-Первоначальный STOP был NEEDS-FIX из-за избыточного требования Native. После уточнения runner продуктовый сценарий принят по actual Headless keyboard evidence, affected full suite103/103 PASS; системная Native-интеграция остаётся ограничением проверки. Можно продолжать авторизованную доставку. До проверки exact merged package/public updater/установки их успешность не заявляется. Автоматический downgrade приложения не поддерживается; исправление выпускается следующей версией, ручная переустановка — отдельный rollback path. OAuth Testing и отсутствие подписи установщика сохраняются.
+Первоначальный STOP был NEEDS-FIX из-за избыточного требования Native. После уточнения runner продуктовый сценарий принят по actual Headless keyboard evidence, affected full suite103/103 PASS; системная Native-интеграция остаётся ограничением проверки. Авторизованная доставка выполнена с exact merged package/public updater/installed proofs выше. Автоматический downgrade приложения не поддерживается; исправление выпускается следующей версией, ручная переустановка — отдельный rollback path. OAuth Testing и отсутствие подписи установщика сохраняются.
 
 Первый procedural advisory reviewer прочитал четыре свежих TRX (506 PASS/0 fail/skip), manifest/package/OAuth/preservation proof и probe source; независимо сверил size/SHA256 трёх binary assets и feed, открыл два новых Headless PNG и прочитал live PR #7 (OPEN/DRAFT, MERGEABLE/CLEAN). Новых замечаний к подготовке не было; первоначальный полный STOP оставлен NEEDS-FIX из-за Native. Affected source re-review нового Headless keyboard flow — PASS: нет ослабления проверок или принудительного expected focus. Reviewer подтвердил применимость Headless для поведения Avalonia при недоступном interactive desktop. Исторический Native failure не заменён на PASS; future exact-main rebuild/public updater/install proof по-прежнему требуются.
 
 Affected final review: reviewer прочитал actual targeted1/1 и full103/103 TRX (0 fail/skip), осмотрел PNG диалога и подтвердил пять ролей в scope поведения Avalonia/подготовки delivery. **STOP PASS для авторизованного merge**; product behavior blocker закрыт actual Headless evidence. Native/Win32 integration остаётся явной непроверенной границей. Создан hash-verified backup1017 contact/group/photo файлов и3 protected settings/vault в LocalAppData вне репозитория; credentials не публикуются.
+
+Final delivery review: procedural no-mutation reviewer независимо проверил live PR/release/tag, пять remote/local size/SHA256 и curated notes, прочитал public backend/Setup/installed/OAuth/ordinary proofs; сверил actual installed DLL/PID и повторно хешировал исходные1017+3 и все1020 backup files — расхождений нет. Пять применимых ролей: PASS. **Итоговый STOP PASS: merge, stable release и локальное обновление выполнены.** Product/package rework не требуется; финальная правка только документирует доставку и не меняет release SHA.
